@@ -34,6 +34,21 @@ fn generate_lib_fmod(source: &str) {
     for function in header.functions {
         // println!("{:?} {}", function.return_type, function.name);
     }
+
+    let data =
+        fs::read_to_string(source.join("api/core/inc/fmod_common.h")).expect("cannot read file");
+    let header = fmod_common::parse(&data).unwrap();
+    println!("FMOD Common");
+    println!("Opaque Types: {}", header.opaque_types.len());
+    println!("Structures: {}", header.structures.len());
+    println!("Constants: {}", header.constants.len());
+    println!("Flags: {}", header.flags.len());
+    println!("Enumerations: {}", header.enumerations.len());
+    println!("Callbacks: {}", header.callbacks.len());
+    println!("Type Aliases: {}", header.type_aliases.len());
+    for alias in header.type_aliases {
+        println!("{} {:?}", alias.name, alias.base_type);
+    }
 }
 
 fn main() {

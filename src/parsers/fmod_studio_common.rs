@@ -243,6 +243,7 @@ mod tests {
                     name: "FMOD_STUDIO_BANK_INFO".into(),
                     fields: vec![Field {
                         as_const: None,
+                        as_array: None,
                         field_type: FundamentalType("int".into()),
                         pointer: None,
                         name: "size".into()
@@ -275,12 +276,14 @@ mod tests {
                     fields: vec![
                         Field {
                             as_const: Some("const".into()),
+                            as_array: None,
                             field_type: FundamentalType("char".into()),
                             pointer: normal(),
                             name: "name".into()
                         },
                         Field {
                             as_const: None,
+                            as_array: None,
                             field_type: UserType("FMOD_STUDIO_PARAMETER_ID".into()),
                             pointer: None,
                             name: "id".into()
@@ -318,6 +321,7 @@ mod tests {
                     name: "FMOD_STUDIO_USER_PROPERTY".into(),
                     fields: vec![Field {
                         as_const: None,
+                        as_array: None,
                         field_type: UserType("FMOD_STUDIO_USER_PROPERTY_TYPE".into()),
                         pointer: None,
                         name: "type".into()
@@ -326,12 +330,14 @@ mod tests {
                         fields: vec![
                             Field {
                                 as_const: None,
+                                as_array: None,
                                 field_type: UserType("FMOD_BOOL".into()),
                                 pointer: None,
                                 name: "boolvalue".into()
                             },
                             Field {
                                 as_const: None,
+                                as_array: None,
                                 field_type: FundamentalType("float".into()),
                                 pointer: None,
                                 name: "floatvalue".into()

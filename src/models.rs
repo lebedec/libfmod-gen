@@ -79,6 +79,7 @@ pub struct Enumeration {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Field {
     pub as_const: Option<String>,
+    pub as_array: Option<String>,
     pub field_type: Type,
     pub pointer: Option<Pointer>,
     pub name: String,

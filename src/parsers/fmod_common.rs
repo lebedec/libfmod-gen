@@ -59,7 +59,10 @@ impl From<error::Error<Rule>> for Error {
 mod tests {
     use crate::fmod_common::{parse, Header};
     use crate::models::Type::FundamentalType;
-    use crate::models::{Constant, Flag, Flags, OpaqueType, TypeAlias};
+    use crate::models::{
+        Argument, Callback, Constant, Enumeration, Enumerator, Field, Flag, Flags, OpaqueType,
+        Structure, TypeAlias,
+    };
 
     #[test]
     fn test_should_ignore_ifndef_directive() {
@@ -386,6 +389,169 @@ mod tests {
                 }],
                 enumerations: vec![],
                 structures: vec![],
+                callbacks: vec![],
+                type_aliases: vec![]
+            })
+        )
+    }
+
+    #[test]
+    fn test_should_ignore_preset() {
+        let source = r#"
+            #define FMOD_PRESET_OFF {  1000,    7,  11, 5000, 100, 100, 100, 250, 0,    20,  96, -80.0f }
+        "#;
+        assert_eq!(parse(source), Ok(Header::default()))
+    }
+
+    #[test]
+    fn test_should_parse_enumeration_with_negative_value() {
+        let source = r#"
+            typedef enum FMOD_SPEAKER
+            {
+                FMOD_SPEAKER_NONE = -1,
+                FMOD_SPEAKER_FRONT_LEFT = 0,
+                FMOD_SPEAKER_FRONT_RIGHT,
+                FMOD_SPEAKER_FORCEINT = 65536
+            } FMOD_SPEAKER;
+        "#;
+        assert_eq!(
+            parse(source),
+            Ok(Header {
+                opaque_types: vec![],
+                constants: vec![],
+                flags: vec![],
+                enumerations: vec![Enumeration {
+                    name: "FMOD_SPEAKER".into(),
+                    enumerators: vec![
+                        Enumerator {
+                            name: "FMOD_SPEAKER_NONE".into(),
+                            value: Some("-1".into())
+                        },
+                        Enumerator {
+                            name: "FMOD_SPEAKER_FRONT_LEFT".into(),
+                            value: Some("0".into())
+                        },
+                        Enumerator {
+                            name: "FMOD_SPEAKER_FRONT_RIGHT".into(),
+                            value: None
+                        },
+                        Enumerator {
+                            name: "FMOD_SPEAKER_FORCEINT".into(),
+                            value: Some("65536".into())
+                        }
+                    ]
+                }],
+                structures: vec![],
+                callbacks: vec![],
+                type_aliases: vec![]
+            })
+        )
+    }
+
+    #[test]
+    fn test_should_parse_callback_with_void_pointer_return() {
+        let source = r#"
+            typedef void* (F_CALL *FMOD_MEMORY_ALLOC_CALLBACK) (unsigned int size);
+        "#;
+        assert_eq!(
+            parse(source),
+            Ok(Header {
+                opaque_types: vec![],
+                constants: vec![],
+                flags: vec![],
+                enumerations: vec![],
+                structures: vec![],
+                callbacks: vec![Callback {
+                    return_type: FundamentalType("void*".into()),
+                    name: "FMOD_MEMORY_ALLOC_CALLBACK".into(),
+                    arguments: vec![Argument {
+                        as_const: None,
+                        argument_type: FundamentalType("unsigned int".into()),
+                        pointer: None,
+                        name: "size".into()
+                    }]
+                }],
+                type_aliases: vec![]
+            })
+        )
+    }
+
+    #[test]
+    fn test_should_parse_structure_with_multiple_fields() {
+        let source = r#"
+            typedef struct FMOD_VECTOR
+            {
+                float x;
+                float y;
+                float z;
+            } FMOD_VECTOR;
+        "#;
+        assert_eq!(
+            parse(source),
+            Ok(Header {
+                opaque_types: vec![],
+                constants: vec![],
+                flags: vec![],
+                enumerations: vec![],
+                structures: vec![Structure {
+                    name: "FMOD_VECTOR".into(),
+                    fields: vec![
+                        Field {
+                            as_const: None,
+                            as_array: None,
+                            field_type: FundamentalType("float".into()),
+                            pointer: None,
+                            name: "x".into()
+                        },
+                        Field {
+                            as_const: None,
+                            as_array: None,
+                            field_type: FundamentalType("float".into()),
+                            pointer: None,
+                            name: "y".into()
+                        },
+                        Field {
+                            as_const: None,
+                            as_array: None,
+                            field_type: FundamentalType("float".into()),
+                            pointer: None,
+                            name: "z".into()
+                        },
+                    ],
+                    union: None
+                }],
+                callbacks: vec![],
+                type_aliases: vec![]
+            })
+        )
+    }
+
+    #[test]
+    fn test_should_parse_structure_with_array_field() {
+        let source = r#"
+            typedef struct FMOD_GUID
+            {
+                unsigned char  Data4[8];
+            } FMOD_GUID;
+        "#;
+        assert_eq!(
+            parse(source),
+            Ok(Header {
+                opaque_types: vec![],
+                constants: vec![],
+                flags: vec![],
+                enumerations: vec![],
+                structures: vec![Structure {
+                    name: "FMOD_GUID".into(),
+                    fields: vec![Field {
+                        as_const: None,
+                        as_array: Some("[8]".into()),
+                        field_type: FundamentalType("unsigned char".into()),
+                        pointer: None,
+                        name: "Data4".into()
+                    },],
+                    union: None
+                }],
                 callbacks: vec![],
                 type_aliases: vec![]
             })
