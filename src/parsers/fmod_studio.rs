@@ -1,78 +1,14 @@
-use crate::api::Error;
-use pest::iterators::Pair;
+use crate::models::{Error, Function};
+use crate::repr::JsonConverter;
 use pest::{error, Parser};
-use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
 
 #[derive(Parser)]
 #[grammar = "./grammars/fmod_studio.pest"]
 struct FmodStudioParser;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum Pointer {
-    NormalPointer(String),
-    DoublePointer(String),
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum Type {
-    FundamentalType(String),
-    UserType(String),
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Argument {
-    pub as_const: Option<String>,
-    pub argument_type: Type,
-    pub pointer: Option<Pointer>,
-    pub name: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Function {
-    pub return_type: Type,
-    pub name: String,
-    pub arguments: Vec<Argument>,
-}
-
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Header {
     pub functions: Vec<Function>,
-}
-
-struct JsonConverter {
-    pub arrays: Vec<String>,
-}
-
-impl JsonConverter {
-    pub fn new(arrays: Vec<String>) -> Self {
-        JsonConverter { arrays }
-    }
-
-    pub fn convert_to_value(&self, pair: Pair<'_, Rule>) -> Value {
-        let rule = format!("{:?}", pair.as_rule());
-        let data = pair.as_str();
-        let inner = pair.into_inner();
-        if inner.peek().is_none() {
-            Value::String(data.into())
-        } else {
-            if self.arrays.contains(&rule) {
-                Value::Array(inner.map(|pair| self.convert_to_value(pair)).collect())
-            } else {
-                Value::Object(Map::from_iter(inner.map(|pair| {
-                    (format!("{:?}", pair.as_rule()), self.convert_to_value(pair))
-                })))
-            }
-        }
-    }
-
-    pub fn convert<T>(&self, pair: Pair<'_, Rule>) -> Result<T, serde_json::Error>
-    where
-        T: DeserializeOwned,
-    {
-        serde_json::from_value(self.convert_to_value(pair))
-    }
 }
 
 pub fn parse(source: &str) -> Result<Header, Error> {
@@ -81,12 +17,12 @@ pub fn parse(source: &str) -> Result<Header, Error> {
         .ok_or(Error::FileMalformed)?;
 
     let arrays = vec!["arguments"];
-    let formatter = JsonConverter::new(arrays.into_iter().map(String::from).collect());
+    let converter = JsonConverter::new(arrays.into_iter().map(String::from).collect());
 
     let mut header = Header::default();
     for declaration in declarations.into_inner() {
         match declaration.as_rule() {
-            Rule::Function => header.functions.push(formatter.convert(declaration)?),
+            Rule::Function => header.functions.push(converter.convert(declaration)?),
             _ => continue,
         }
     }
@@ -100,17 +36,11 @@ impl From<error::Error<Rule>> for Error {
     }
 }
 
-impl From<serde_json::Error> for Error {
-    fn from(error: serde_json::Error) -> Self {
-        Self::Serde(error.to_string())
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use crate::parsers::fmod_studio::Pointer::NormalPointer;
-    use crate::parsers::fmod_studio::Type::{FundamentalType, UserType};
-    use crate::parsers::fmod_studio::{parse, Argument, Function, Header, Pointer};
+    use crate::fmod_studio::{parse, Header};
+    use crate::models::Type::{FundamentalType, UserType};
+    use crate::models::{Argument, Function, Pointer};
 
     fn normal() -> Option<Pointer> {
         Some(Pointer::NormalPointer("*".into()))
