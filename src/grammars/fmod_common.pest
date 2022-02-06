@@ -7,11 +7,13 @@ COMMENT = _{
 name = @{ ("_" | ASCII_ALPHANUMERIC)+ }
 string = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
 
-define = _{ "#define" ~ "FMOD_STUDIO_COMMON_H" }
-ifndef = _{ "#ifndef" ~ "FMOD_STUDIO_COMMON_H" }
+define = _{ "#define" ~ "_FMOD_COMMON_H" }
+ifndef = _{ "#ifndef" ~ "_FMOD_COMMON_H" }
 endif = _{ "#endif" }
 include = _{ "#include" ~ "\"fmod.h\"" }
 Directive = { define | ifndef | endif | include }
+
+ImportHelper = {"#define F_CALLBACK F_CALL" | ("#if" ~ (!"#endif" ~ ANY)* ~ "#endif")}
 
 FundamentalType = {
     "char" |
@@ -30,6 +32,9 @@ FundamentalType = {
 }
 UserType = @{name}
 
+base_type = { FundamentalType | UserType }
+TypeAlias = { "typedef" ~ base_type ~ name ~ ";" }
+
 OpaqueType = { "typedef" ~ "struct" ~ name ~ name ~ ";"}
 
 Calculation = { "(" ~ (!")" ~ ANY)* ~ ")" }
@@ -40,7 +45,7 @@ Constant = { "#define" ~ name ~ value }
 Flag = { "#define" ~ name ~ value }
 flags = { Flag+ }
 flags_type = { FundamentalType }
-Flags = { "typedef" ~ flags_type ~ name ~ ";" ~ flags }
+Flags = { "typedef" ~ flags_type ~ name ~ ";" ~ flags  }
 
 Enumerator = { ","? ~ name ~ ("=" ~ value)? }
 enumerators = { Enumerator* }
@@ -63,10 +68,12 @@ return_type = { FundamentalType | UserType}
 Callback = { "typedef" ~ return_type ~ "(F_CALLBACK *" ~ name ~ ")" ~ arguments ~ ";" }
 
 declaration = _{
+	ImportHelper |
     OpaqueType |
     Directive |
-    Constant |
     Flags |
+    TypeAlias |
+    Constant |
     Enumeration |
     Structure |
     Callback

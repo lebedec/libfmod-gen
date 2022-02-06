@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate pest_derive;
 
-use crate::parsers::{fmod, fmod_studio, fmod_studio_common};
+use crate::parsers::{fmod, fmod_common, fmod_studio, fmod_studio_common};
 use std::fs;
 use std::path::Path;
 

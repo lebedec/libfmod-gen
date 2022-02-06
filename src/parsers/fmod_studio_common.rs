@@ -65,7 +65,7 @@ mod tests {
     }
 
     #[test]
-    fn test_should_ignore_infdef_directive() {
+    fn test_should_ignore_ifndef_directive() {
         let source = "#ifndef FMOD_STUDIO_COMMON_H";
         assert_eq!(parse(source), Ok(Header::default()))
     }

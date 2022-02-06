@@ -102,3 +102,9 @@ pub struct Callback {
     pub name: String,
     pub arguments: Vec<Argument>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TypeAlias {
+    pub base_type: Type,
+    pub name: String,
+}
