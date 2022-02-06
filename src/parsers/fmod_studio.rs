@@ -16,8 +16,8 @@ pub fn parse(source: &str) -> Result<Header, Error> {
         .next()
         .ok_or(Error::FileMalformed)?;
 
-    let arrays = vec!["arguments"];
-    let converter = JsonConverter::new(arrays.into_iter().map(String::from).collect());
+    let arrays = vec![String::from("arguments")];
+    let converter = JsonConverter::new(arrays);
 
     let mut header = Header::default();
     for declaration in declarations.into_inner() {

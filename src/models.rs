@@ -39,3 +39,66 @@ pub struct Function {
     pub name: String,
     pub arguments: Vec<Argument>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct OpaqueType {
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Constant {
+    pub name: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Flag {
+    pub name: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Flags {
+    pub flags_type: Type,
+    pub name: String,
+    pub flags: Vec<Flag>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Enumerator {
+    pub name: String,
+    pub value: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Enumeration {
+    pub name: String,
+    pub enumerators: Vec<Enumerator>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Field {
+    pub as_const: Option<String>,
+    pub field_type: Type,
+    pub pointer: Option<Pointer>,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Union {
+    pub fields: Vec<Field>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Structure {
+    pub name: String,
+    pub fields: Vec<Field>,
+    pub union: Option<Union>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Callback {
+    pub return_type: Type,
+    pub name: String,
+    pub arguments: Vec<Argument>,
+}

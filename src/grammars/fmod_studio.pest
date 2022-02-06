@@ -1,5 +1,8 @@
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
-COMMENT = _{ ("/*" ~ (!"*/" ~ ANY)* ~ "*/") }
+COMMENT = _{
+    ("/*" ~ (!"*/" ~ ANY)* ~ "*/")
+    | ("//" ~ (!"\n" ~ ANY)*)
+}
 
 name = @{ ("_" | ASCII_ALPHANUMERIC)+ }
 string = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
@@ -26,7 +29,8 @@ FundamentalType = {
     "long" |
     "unsigned long long" |
     "unsigned long" |
-    "void"
+    "void" |
+    "float"
 }
 UserType = @{name}
 

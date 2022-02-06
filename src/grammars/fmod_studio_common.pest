@@ -1,0 +1,73 @@
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+COMMENT = _{
+    ("/*" ~ (!"*/" ~ ANY)* ~ "*/")
+    | ("//" ~ (!"\n" ~ ANY)*)
+}
+
+name = @{ ("_" | ASCII_ALPHANUMERIC)+ }
+string = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
+
+define = _{ "#define" ~ "FMOD_STUDIO_COMMON_H" }
+ifndef = _{ "#ifndef" ~ "FMOD_STUDIO_COMMON_H" }
+endif = _{ "#endif" }
+include = _{ "#include" ~ "\"fmod.h\"" }
+Directive = { define | ifndef | endif | include }
+
+FundamentalType = {
+    "char" |
+    "unsigned char" |
+    "signed char" |
+    "int" |
+    "unsigned int" |
+    "short" |
+    "unsigned short" |
+    "long long" |
+    "long" |
+    "unsigned long long" |
+    "unsigned long" |
+    "void" |
+    "float"
+}
+UserType = @{name}
+
+OpaqueType = { "typedef" ~ "struct" ~ name ~ name ~ ";"}
+
+value = @{ ("x" |ASCII_HEX_DIGIT)* }
+Constant = { "#define" ~ name ~ value }
+
+Flag = { "#define" ~ name ~ value }
+flags = { Flag* }
+flags_type = { FundamentalType }
+Flags = { "typedef" ~ flags_type ~ name ~ ";" ~ flags }
+
+Enumerator = { ","? ~ name ~ ("=" ~ value)? }
+enumerators = { Enumerator* }
+Enumeration = { "typedef" ~ "enum" ~ name ~ "{" ~ enumerators ~ "}" ~  name ~ ";" }
+
+as_const = { "const" }
+NormalPointer = { "*" }
+DoublePointer = { "**" }
+pointer = { DoublePointer | NormalPointer }
+field_type = { FundamentalType | UserType }
+Field = { as_const? ~ field_type ~ pointer? ~ name ~ ";" }
+fields = { Field* }
+union = { "union" ~ "{" ~ fields ~ "}" ~ ";" }
+Structure = { "typedef"? ~ "struct" ~ name ~ "{" ~ fields ~ union? ~ "}" ~ name? ~ ";" }
+
+argument_type = { FundamentalType | UserType }
+Argument = { as_const? ~ argument_type ~ pointer? ~ name}
+arguments = { "(" ~ (","? ~ Argument)* ~ ")" }
+return_type = { FundamentalType | UserType}
+Callback = { "typedef" ~ return_type ~ "(F_CALLBACK *" ~ name ~ ")" ~ arguments ~ ";" }
+
+declaration = _{
+    OpaqueType |
+    Directive |
+    Constant |
+    Flags |
+    Enumeration |
+    Structure |
+    Callback
+}
+
+api = { SOI ~ declaration* ~ EOI  }
