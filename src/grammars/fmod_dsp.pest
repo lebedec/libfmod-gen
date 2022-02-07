@@ -7,19 +7,14 @@ COMMENT = _{
 name = @{ ("_" | ASCII_ALPHANUMERIC)+ }
 string = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
 
-define = _{ "#define" ~ "_FMOD_COMMON_H" }
-ifndef = _{ "#ifndef" ~ "_FMOD_COMMON_H" }
+define = _{ "#define" ~ "_FMOD_DSP_H" }
+ifndef = _{ "#ifndef" ~ "_FMOD_DSP_H" }
 endif = _{ "#endif" }
-include = _{ (
-	"#include \"fmod_codec.h\"" |
-	"#include \"fmod_dsp.h\"" |
-	"#include \"fmod_output.h\""
-) }
+include = _{ "#include \"fmod_dsp_effects.h\"" }
 Directive = { define | ifndef | endif | include }
 
-ImportHelper = {"#define F_CALLBACK F_CALL" | ("#if" ~ (!"#endif" ~ ANY)* ~ "#endif")}
-
 FundamentalType = {
+    "char* const*" |
     "char" |
     "unsigned char" |
     "signed char" |
@@ -54,7 +49,7 @@ Flags = { "typedef" ~ flags_type ~ name ~ ";" ~ flags  }
 
 Enumerator = { ","? ~ name ~ ("=" ~ value)? }
 enumerators = { Enumerator* }
-Enumeration = { "typedef" ~ "enum" ~ name ~ "{" ~ enumerators ~ "}" ~  name ~ ";" }
+Enumeration = { "typedef" ~ "enum" ~ name? ~ "{" ~ enumerators ~ ","? ~ "}" ~  name ~ ";" }
 
 as_const = { "const" }
 as_array = { "[" ~ ("_" | ASCII_ALPHANUMERIC)+ ~ "]" }
@@ -69,19 +64,19 @@ Structure = { "typedef"? ~ "struct" ~ name ~ "{" ~ fields ~ union? ~ "}" ~ name?
 
 argument_type = { FundamentalType | UserType }
 Argument = { as_const? ~ argument_type ~ pointer? ~ name}
-arguments = { "(" ~ (","? ~ Argument)* ~ ")" }
+arguments = { (","? ~ Argument)* }
 return_type = { FundamentalType | UserType}
-Callback = { "typedef" ~ return_type ~ pointer? ~ ("(F_CALLBACK *" | "(F_CALL *") ~ name ~ ")" ~ arguments ~ ";" }
+varargs = { "," ~ "..." }
+Callback = { "typedef" ~ return_type ~ pointer? ~ ("(F_CALLBACK *" | "(F_CALL *") ~ name ~ ")" ~ "(" ~ arguments ~ varargs?  ~ ")" ~  ";" }
 
-Preset = { "#define" ~ name ~ "{" ~ (!"}" ~ ANY)* ~ "}" }
+Macros = {"#define" ~ name ~ "(" ~ (!"#" ~ ANY)* }
 
 declaration = _{
-	ImportHelper |
     OpaqueType |
+    Macros |
     Directive |
     Flags |
     TypeAlias |
-    Preset |
     Constant |
     Enumeration |
     Structure |

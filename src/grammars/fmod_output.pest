@@ -43,7 +43,7 @@ flags_type = { FundamentalType }
 Flags = { "typedef" ~ flags_type ~ name ~ ";" ~ flags  }
 
 as_const = { "const" }
-as_array = { "[" ~ ASCII_DIGIT+ ~ "]" }
+as_array = { "[" ~ ("_" | ASCII_ALPHANUMERIC)+ ~ "]" }
 NormalPointer = { "*" }
 DoublePointer = { "**" }
 pointer = { DoublePointer | NormalPointer }
