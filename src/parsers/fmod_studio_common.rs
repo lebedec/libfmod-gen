@@ -371,7 +371,8 @@ mod tests {
                         argument_type: UserType("FMOD_STUDIO_SYSTEM".into()),
                         pointer: normal(),
                         name: "system".into()
-                    }]
+                    }],
+                    varargs: None
                 }]
             })
         )
@@ -406,7 +407,8 @@ mod tests {
                             pointer: normal(),
                             name: "parameters".into()
                         }
-                    ]
+                    ],
+                    varargs: None
                 }]
             })
         )

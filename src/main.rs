@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate pest_derive;
 
-use crate::parsers::{fmod, fmod_common, fmod_studio, fmod_studio_common};
+use crate::parsers::{fmod, fmod_common, fmod_output, fmod_studio, fmod_studio_common};
 use std::fs;
 use std::path::Path;
 
@@ -49,6 +49,16 @@ fn generate_lib_fmod(source: &str) {
     for alias in header.type_aliases {
         println!("{} {:?}", alias.name, alias.base_type);
     }
+
+    let data =
+        fs::read_to_string(source.join("api/core/inc/fmod_output.h")).expect("cannot read file");
+    let header = fmod_output::parse(&data).unwrap();
+    println!("FMOD Output");
+    println!("Opaque Types: {}", header.opaque_types.len());
+    println!("Structures: {}", header.structures.len());
+    println!("Constants: {}", header.constants.len());
+    println!("Flags: {}", header.flags.len());
+    println!("Callbacks: {}", header.callbacks.len());
 }
 
 fn main() {

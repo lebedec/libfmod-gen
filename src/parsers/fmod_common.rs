@@ -469,7 +469,8 @@ mod tests {
                         argument_type: FundamentalType("unsigned int".into()),
                         pointer: None,
                         name: "size".into()
-                    }]
+                    }],
+                    varargs: None
                 }],
                 type_aliases: vec![]
             })

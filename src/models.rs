@@ -102,6 +102,7 @@ pub struct Callback {
     pub return_type: Type,
     pub name: String,
     pub arguments: Vec<Argument>,
+    pub varargs: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
