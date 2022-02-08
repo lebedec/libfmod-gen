@@ -2,7 +2,8 @@
 extern crate pest_derive;
 
 use crate::parsers::{
-    fmod, fmod_common, fmod_dsp, fmod_dsp_effects, fmod_output, fmod_studio, fmod_studio_common,
+    fmod, fmod_common, fmod_dsp, fmod_dsp_effects, fmod_errors, fmod_output, fmod_studio,
+    fmod_studio_common,
 };
 use std::fs;
 use std::path::Path;
@@ -80,6 +81,12 @@ fn generate_lib_fmod(source: &str) {
     println!("Structures: {}", header.structures.len());
     println!("Constants: {}", header.constants.len());
     println!("Enumerations: {}", header.enumerations.len());
+
+    let data =
+        fs::read_to_string(source.join("api/core/inc/fmod_errors.h")).expect("cannot read file");
+    let header = fmod_errors::parse(&data).unwrap();
+    println!("FMOD Errors");
+    println!("Errors: {}", header.mapping.errors.len());
 }
 
 fn main() {

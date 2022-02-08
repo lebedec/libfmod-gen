@@ -110,3 +110,14 @@ pub struct TypeAlias {
     pub base_type: Type,
     pub name: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ErrorString {
+    pub name: String,
+    pub string: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct ErrorStringMapping {
+    pub errors: Vec<ErrorString>,
+}
