@@ -5,6 +5,7 @@ pub enum Error {
     FileMalformed,
     Pest(String),
     Serde(String),
+    Fmt(String),
 }
 
 impl From<serde_json::Error> for Error {
