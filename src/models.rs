@@ -6,6 +6,8 @@ pub enum Error {
     Pest(String),
     Serde(String),
     Fmt(String),
+    ParseInt(String),
+    LexError(String),
 }
 
 impl From<serde_json::Error> for Error {

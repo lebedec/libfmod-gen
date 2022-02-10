@@ -14,6 +14,7 @@ use crate::parsers::{
 use std::fs;
 use std::path::Path;
 
+mod example;
 mod generators;
 mod models;
 mod parsers;
@@ -42,6 +43,7 @@ fn generate_lib_fmod(source: &str) {
     println!("Enumerations: {}", header.enumerations.len());
     println!("Callbacks: {}", header.callbacks.len());
     api.opaque_types.extend(header.opaque_types);
+    api.constants.extend(header.constants);
 
     let data = fs::read_to_string(source.join("api/core/inc/fmod.h")).expect("cannot read file");
     let header = fmod::parse(&data).unwrap();
@@ -61,6 +63,7 @@ fn generate_lib_fmod(source: &str) {
     println!("Callbacks: {}", header.callbacks.len());
     println!("Type Aliases: {}", header.type_aliases.len());
     api.opaque_types.extend(header.opaque_types);
+    api.constants.extend(header.constants);
 
     let data =
         fs::read_to_string(source.join("api/core/inc/fmod_output.h")).expect("cannot read file");
@@ -72,6 +75,7 @@ fn generate_lib_fmod(source: &str) {
     println!("Flags: {}", header.flags.len());
     println!("Callbacks: {}", header.callbacks.len());
     api.opaque_types.extend(header.opaque_types);
+    api.constants.extend(header.constants);
 
     let data =
         fs::read_to_string(source.join("api/core/inc/fmod_dsp.h")).expect("cannot read file");
@@ -84,6 +88,7 @@ fn generate_lib_fmod(source: &str) {
     println!("Callbacks: {}", header.callbacks.len());
     println!("Enumerations: {}", header.enumerations.len());
     api.opaque_types.extend(header.opaque_types);
+    api.constants.extend(header.constants);
 
     let data = fs::read_to_string(source.join("api/core/inc/fmod_dsp_effects.h"))
         .expect("cannot read file");
@@ -92,6 +97,7 @@ fn generate_lib_fmod(source: &str) {
     println!("Structures: {}", header.structures.len());
     println!("Constants: {}", header.constants.len());
     println!("Enumerations: {}", header.enumerations.len());
+    api.constants.extend(header.constants);
 
     let data =
         fs::read_to_string(source.join("api/core/inc/fmod_errors.h")).expect("cannot read file");
@@ -100,7 +106,7 @@ fn generate_lib_fmod(source: &str) {
     println!("Errors: {}", header.mapping.errors.len());
 
     let code = ffi::generate_api(api).unwrap();
-    fs::write(source.join("./ffi.rs"), code).unwrap();
+    fs::write("./src/example.rs", code).unwrap();
 }
 
 fn main() {
