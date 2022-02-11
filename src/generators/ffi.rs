@@ -1,12 +1,11 @@
 use crate::models::{
-    Callback, Constant, Enumeration, Error, Flags, Function, OpaqueType, Structure, TypeAlias,
+    Callback, Constant, Enumeration, Error, Flags, Function, OpaqueType, Structure, Type, TypeAlias,
 };
 
-use quote::__private::{LexError, Literal, TokenStream};
+use quote::__private::{Ident, LexError, Literal, TokenStream};
 use quote::quote;
 use std::collections::HashMap;
 use std::num::ParseIntError;
-use std::os::raw::{c_uint, c_ulonglong};
 use std::str::FromStr;
 
 #[derive(Debug, Default)]
@@ -58,16 +57,46 @@ pub fn generate_constant_code(constant: &Constant) -> Result<TokenStream, Error>
     let tokens = if value.len() == "0xFFFFFFFFFFFFFFFF".len() && value.starts_with("0x") {
         let value = TokenStream::from_str(value)?;
         quote! {
-            pub const #name: raw::c_ulonglong = #value;
+            pub const #name: c_ulonglong = #value;
         }
     } else {
         let value = Literal::u32_unsuffixed(value.parse()?);
         quote! {
-            pub const #name: raw::c_uint = #value;
+            pub const #name: c_uint = #value;
         }
     };
 
     Ok(tokens)
+}
+
+pub fn map_type(c_type: &Type) -> Ident {
+    match c_type {
+        Type::FundamentalType(name) => match &name[..] {
+            "char" => format_ident!("{}", "c_char"),
+            "unsigned char" => format_ident!("{}", "c_uchar"),
+            "signed char" => format_ident!("{}", "c_char"),
+            "int" => format_ident!("{}", "c_int"),
+            "unsigned int" => format_ident!("{}", "c_unit"),
+            "short" => format_ident!("{}", "c_short"),
+            "unsigned short" => format_ident!("{}", "c_ushort"),
+            "long long" => format_ident!("{}", "c_longlong"),
+            "long" => format_ident!("{}", "c_long"),
+            "unsigned long long" => format_ident!("{}", "c_ulonglong"),
+            "unsigned long" => format_ident!("{}", "c_ulong"),
+            "float" => format_ident!("{}", "c_float"),
+            _ => format_ident!("{}", name),
+        },
+        Type::UserType(name) => format_ident!("{}", name),
+    }
+}
+
+pub fn generate_type_alias_code(type_alias: &TypeAlias) -> TokenStream {
+    let name = format_ident!("{}", type_alias.name);
+    let base = map_type(&type_alias.base_type);
+
+    quote! {
+        pub type #name = #base;
+    }
 }
 
 pub fn generate_api_code(api: Api) -> Result<TokenStream, Error> {
@@ -82,11 +111,18 @@ pub fn generate_api_code(api: Api) -> Result<TokenStream, Error> {
         constants.push(generate_constant_code(constant)?);
     }
 
+    let type_aliases: Vec<TokenStream> = api
+        .type_aliases
+        .iter()
+        .map(generate_type_alias_code)
+        .collect();
+
     Ok(quote! {
         #![allow(non_camel_case_types)]
-        use std::os::raw;
+        use std::os::raw::{c_int, c_uint, c_ulonglong};
 
         #(#opaque_types)*
+        #(#type_aliases)*
         #(#constants)*
     })
 }
@@ -99,7 +135,8 @@ pub fn generate_api(api: Api) -> Result<String, Error> {
 #[cfg(test)]
 mod tests {
     use crate::ffi::{generate_api, Api};
-    use crate::models::{Constant, OpaqueType};
+    use crate::models::Type::FundamentalType;
+    use crate::models::{Constant, OpaqueType, TypeAlias};
     use quote::__private::TokenStream;
 
     fn format(code: TokenStream) -> String {
@@ -115,9 +152,9 @@ mod tests {
         });
         let code = quote! {
             #![allow(non_camel_case_types)]
-            use std::os::raw;
+            use std::os::raw::{c_int, c_uint, c_ulonglong};
 
-            pub const FMOD_MAX_CHANNEL_WIDTH: raw::c_uint = 32;
+            pub const FMOD_MAX_CHANNEL_WIDTH: c_uint = 32;
         };
         assert_eq!(generate_api(api), Ok(format(code)))
     }
@@ -131,9 +168,25 @@ mod tests {
         });
         let code = quote! {
             #![allow(non_camel_case_types)]
-            use std::os::raw;
+            use std::os::raw::{c_int, c_uint, c_ulonglong};
 
-            pub const FMOD_PORT_INDEX_NONE: raw::c_ulonglong = 0xFFFFFFFFFFFFFFFF;
+            pub const FMOD_PORT_INDEX_NONE: c_ulonglong = 0xFFFFFFFFFFFFFFFF;
+        };
+        assert_eq!(generate_api(api), Ok(format(code)))
+    }
+
+    #[test]
+    fn test_should_generate_type_alias() {
+        let mut api = Api::default();
+        api.type_aliases.push(TypeAlias {
+            base_type: FundamentalType("unsigned long long".into()),
+            name: "FMOD_PORT_INDEX".into(),
+        });
+        let code = quote! {
+            #![allow(non_camel_case_types)]
+            use std::os::raw::{c_int, c_uint, c_ulonglong};
+
+            pub type FMOD_PORT_INDEX = c_ulonglong;
         };
         assert_eq!(generate_api(api), Ok(format(code)))
     }
@@ -146,7 +199,7 @@ mod tests {
         });
         let code = quote! {
             #![allow(non_camel_case_types)]
-            use std::os::raw;
+            use std::os::raw::{c_int, c_uint, c_ulonglong};
 
             #[repr(C)]
             #[derive(Debug, Copy, Clone)]
@@ -168,7 +221,7 @@ mod tests {
         });
         let code = quote! {
             #![allow(non_camel_case_types)]
-            use std::os::raw;
+            use std::os::raw::{c_int, c_uint, c_ulonglong};
 
             #[repr(C)]
             #[derive(Debug, Copy, Clone)]

@@ -1,5 +1,5 @@
 #![allow(non_camel_case_types)]
-use std::os::raw;
+use std::os::raw::{c_int, c_uint, c_ulonglong};
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct FMOD_STUDIO_EVENTDESCRIPTION {
@@ -120,13 +120,14 @@ pub struct FMOD_DSP_BUFFER_ARRAY {
 pub struct FMOD_COMPLEX {
     _unused: [u8; 0],
 }
-pub const FMOD_STUDIO_LOAD_MEMORY_ALIGNMENT: raw::c_uint = 32;
-pub const FMOD_MAX_CHANNEL_WIDTH: raw::c_uint = 32;
-pub const FMOD_MAX_SYSTEMS: raw::c_uint = 8;
-pub const FMOD_MAX_LISTENERS: raw::c_uint = 8;
-pub const FMOD_REVERB_MAXINSTANCES: raw::c_uint = 4;
-pub const FMOD_PORT_INDEX_NONE: raw::c_ulonglong = 0xFFFFFFFFFFFFFFFF;
-pub const FMOD_OUTPUT_PLUGIN_VERSION: raw::c_uint = 5;
-pub const FMOD_PLUGIN_SDK_VERSION: raw::c_uint = 110;
-pub const FMOD_DSP_GETPARAM_VALUESTR_LENGTH: raw::c_uint = 32;
-pub const FMOD_DSP_LOUDNESS_METER_HISTOGRAM_SAMPLES: raw::c_uint = 66;
+pub type FMOD_BOOL = c_int;
+pub const FMOD_STUDIO_LOAD_MEMORY_ALIGNMENT: c_uint = 32;
+pub const FMOD_MAX_CHANNEL_WIDTH: c_uint = 32;
+pub const FMOD_MAX_SYSTEMS: c_uint = 8;
+pub const FMOD_MAX_LISTENERS: c_uint = 8;
+pub const FMOD_REVERB_MAXINSTANCES: c_uint = 4;
+pub const FMOD_PORT_INDEX_NONE: c_ulonglong = 0xFFFFFFFFFFFFFFFF;
+pub const FMOD_OUTPUT_PLUGIN_VERSION: c_uint = 5;
+pub const FMOD_PLUGIN_SDK_VERSION: c_uint = 110;
+pub const FMOD_DSP_GETPARAM_VALUESTR_LENGTH: c_uint = 32;
+pub const FMOD_DSP_LOUDNESS_METER_HISTOGRAM_SAMPLES: c_uint = 66;
