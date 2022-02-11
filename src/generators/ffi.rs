@@ -75,24 +75,25 @@ pub fn generate_constant_code(constant: &Constant) -> Result<TokenStream, Error>
 }
 
 pub fn map_type(c_type: &Type) -> Ident {
-    match c_type {
+    let name = match c_type {
         Type::FundamentalType(name) => match &name[..] {
-            "char" => format_ident!("{}", "c_char"),
-            "unsigned char" => format_ident!("{}", "c_uchar"),
-            "signed char" => format_ident!("{}", "c_char"),
-            "int" => format_ident!("{}", "c_int"),
-            "unsigned int" => format_ident!("{}", "c_unit"),
-            "short" => format_ident!("{}", "c_short"),
-            "unsigned short" => format_ident!("{}", "c_ushort"),
-            "long long" => format_ident!("{}", "c_longlong"),
-            "long" => format_ident!("{}", "c_long"),
-            "unsigned long long" => format_ident!("{}", "c_ulonglong"),
-            "unsigned long" => format_ident!("{}", "c_ulong"),
-            "float" => format_ident!("{}", "c_float"),
-            _ => format_ident!("{}", name),
+            "char" => "c_char",
+            "unsigned char" => "c_uchar",
+            "signed char" => "c_char",
+            "int" => "c_int",
+            "unsigned int" => "c_unit",
+            "short" => "c_short",
+            "unsigned short" => "c_ushort",
+            "long long" => "c_longlong",
+            "long" => "c_long",
+            "unsigned long long" => "c_ulonglong",
+            "unsigned long" => "c_ulong",
+            "float" => "c_float",
+            _ => name,
         },
-        Type::UserType(name) => format_ident!("{}", name),
-    }
+        Type::UserType(name) => name,
+    };
+    format_ident!("{}", name)
 }
 
 pub fn generate_type_alias_code(type_alias: &TypeAlias) -> TokenStream {
@@ -102,6 +103,33 @@ pub fn generate_type_alias_code(type_alias: &TypeAlias) -> TokenStream {
     quote! {
         pub type #name = #base;
     }
+}
+
+pub fn generate_enumeration_code(enumeration: &Enumeration) -> Result<TokenStream, Error> {
+    let name = format_ident!("{}", enumeration.name);
+    let mut value: i32 = -1;
+    let mut enumerators = vec![];
+    for enumerator in &enumeration.enumerators {
+        let label = format_ident!("{}", &enumerator.name);
+        let value = match &enumerator.value {
+            None => {
+                value += 1;
+                value
+            }
+            Some(repr) => {
+                value = repr.parse()?;
+                value
+            }
+        };
+        let literal = Literal::i32_unsuffixed(value);
+        enumerators.push(quote! {
+            pub const #label: #name = #literal;
+        });
+    }
+    Ok(quote! {
+        pub type #name = c_int;
+        #(#enumerators)*
+    })
 }
 
 pub fn generate_api_code(api: Api) -> Result<TokenStream, Error> {
@@ -122,6 +150,11 @@ pub fn generate_api_code(api: Api) -> Result<TokenStream, Error> {
         .map(generate_type_alias_code)
         .collect();
 
+    let mut enumerations = vec![];
+    for enumeration in &api.enumerations {
+        enumerations.push(generate_enumeration_code(enumeration)?);
+    }
+
     Ok(quote! {
         #![allow(non_camel_case_types)]
         use std::os::raw::{c_int, c_uint, c_ulonglong};
@@ -129,6 +162,7 @@ pub fn generate_api_code(api: Api) -> Result<TokenStream, Error> {
         #(#opaque_types)*
         #(#type_aliases)*
         #(#constants)*
+        #(#enumerations)*
     })
 }
 
@@ -141,8 +175,9 @@ pub fn generate_api(api: Api) -> Result<String, Error> {
 mod tests {
     use crate::ffi::{generate_api, Api};
     use crate::models::Type::FundamentalType;
-    use crate::models::{Constant, OpaqueType, TypeAlias};
+    use crate::models::{Constant, Enumeration, Enumerator, OpaqueType, TypeAlias};
     use quote::__private::TokenStream;
+    use serde::de::Unexpected::Enum;
 
     fn format(code: TokenStream) -> String {
         rustfmt_wrapper::rustfmt(code).unwrap()
@@ -255,6 +290,107 @@ mod tests {
             pub struct FMOD_CHANNELCONTROL {
                 _unused: [u8; 0]
             }
+        };
+        assert_eq!(generate_api(api), Ok(format(code)))
+    }
+
+    #[test]
+    fn test_should_generate_enumeration_with_negative_value() {
+        let mut api = Api::default();
+        api.enumerations.push(Enumeration {
+            name: "FMOD_CHANNELCONTROL_DSP_INDEX".into(),
+            enumerators: vec![
+                Enumerator {
+                    name: "FMOD_CHANNELCONTROL_DSP_HEAD".into(),
+                    value: Some("-1".into()),
+                },
+                Enumerator {
+                    name: "FMOD_CHANNELCONTROL_DSP_FADER".into(),
+                    value: Some("-2".into()),
+                },
+                Enumerator {
+                    name: "FMOD_CHANNELCONTROL_DSP_FORCEINT".into(),
+                    value: Some("65536".into()),
+                },
+            ],
+        });
+        let code = quote! {
+            #![allow(non_camel_case_types)]
+            use std::os::raw::{c_int, c_uint, c_ulonglong};
+
+            pub type FMOD_CHANNELCONTROL_DSP_INDEX = c_int;
+            pub const FMOD_CHANNELCONTROL_DSP_HEAD: FMOD_CHANNELCONTROL_DSP_INDEX = -1;
+            pub const FMOD_CHANNELCONTROL_DSP_FADER: FMOD_CHANNELCONTROL_DSP_INDEX = -2;
+            pub const FMOD_CHANNELCONTROL_DSP_FORCEINT: FMOD_CHANNELCONTROL_DSP_INDEX = 65536;
+        };
+        assert_eq!(generate_api(api), Ok(format(code)))
+    }
+
+    #[test]
+    fn test_should_generate_enumeration() {
+        let mut api = Api::default();
+        api.enumerations.push(Enumeration {
+            name: "FMOD_PLUGINTYPE".into(),
+            enumerators: vec![
+                Enumerator {
+                    name: "FMOD_PLUGINTYPE_OUTPUT".into(),
+                    value: None,
+                },
+                Enumerator {
+                    name: "FMOD_PLUGINTYPE_CODEC".into(),
+                    value: None,
+                },
+            ],
+        });
+        let code = quote! {
+            #![allow(non_camel_case_types)]
+            use std::os::raw::{c_int, c_uint, c_ulonglong};
+
+            pub type FMOD_PLUGINTYPE = c_int;
+            pub const FMOD_PLUGINTYPE_OUTPUT: FMOD_PLUGINTYPE = 0;
+            pub const FMOD_PLUGINTYPE_CODEC: FMOD_PLUGINTYPE = 1;
+        };
+        assert_eq!(generate_api(api), Ok(format(code)))
+    }
+
+    #[test]
+    fn test_should_generate_enumeration_with_start_values() {
+        let mut api = Api::default();
+        api.enumerations.push(Enumeration {
+            name: "FMOD_SPEAKER".into(),
+            enumerators: vec![
+                Enumerator {
+                    name: "FMOD_SPEAKER_NONE".into(),
+                    value: Some("-1".into()),
+                },
+                Enumerator {
+                    name: "FMOD_SPEAKER_FRONT_LEFT".into(),
+                    value: Some("0".into()),
+                },
+                Enumerator {
+                    name: "FMOD_SPEAKER_FRONT_RIGHT".into(),
+                    value: None,
+                },
+                Enumerator {
+                    name: "FMOD_SPEAKER_FRONT_CENTER".into(),
+                    value: None,
+                },
+                Enumerator {
+                    name: "FMOD_SPEAKER_FORCEINT".into(),
+                    value: Some("65536".into()),
+                },
+            ],
+        });
+        let code = quote! {
+            #![allow(non_camel_case_types)]
+            use std::os::raw::{c_int, c_uint, c_ulonglong};
+
+            pub type FMOD_SPEAKER = c_int;
+            pub const FMOD_SPEAKER_NONE: FMOD_SPEAKER = -1;
+            pub const FMOD_SPEAKER_FRONT_LEFT: FMOD_SPEAKER = 0;
+            pub const FMOD_SPEAKER_FRONT_RIGHT: FMOD_SPEAKER = 1;
+            pub const FMOD_SPEAKER_FRONT_CENTER: FMOD_SPEAKER = 2;
+            pub const FMOD_SPEAKER_FORCEINT: FMOD_SPEAKER = 65536;
         };
         assert_eq!(generate_api(api), Ok(format(code)))
     }

@@ -34,6 +34,7 @@ fn generate_lib_fmod(source: &str) {
     let header = fmod_studio_common::parse(&data).unwrap();
     api.opaque_types.extend(header.opaque_types);
     api.constants.extend(header.constants);
+    api.enumerations.extend(header.enumerations);
 
     let data = fs::read_to_string(source.join("api/core/inc/fmod.h")).expect("cannot read file");
     let header = fmod::parse(&data).unwrap();
@@ -44,6 +45,7 @@ fn generate_lib_fmod(source: &str) {
     api.opaque_types.extend(header.opaque_types);
     api.type_aliases.extend(header.type_aliases);
     api.constants.extend(header.constants);
+    api.enumerations.extend(header.enumerations);
 
     let data =
         fs::read_to_string(source.join("api/core/inc/fmod_output.h")).expect("cannot read file");
@@ -56,11 +58,13 @@ fn generate_lib_fmod(source: &str) {
     let header = fmod_dsp::parse(&data).unwrap();
     api.opaque_types.extend(header.opaque_types);
     api.constants.extend(header.constants);
+    api.enumerations.extend(header.enumerations);
 
     let data = fs::read_to_string(source.join("api/core/inc/fmod_dsp_effects.h"))
         .expect("cannot read file");
     let header = fmod_dsp_effects::parse(&data).unwrap();
     api.constants.extend(header.constants);
+    api.enumerations.extend(header.enumerations);
 
     let data =
         fs::read_to_string(source.join("api/core/inc/fmod_errors.h")).expect("cannot read file");
