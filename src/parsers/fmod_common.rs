@@ -396,6 +396,40 @@ mod tests {
     }
 
     #[test]
+    fn test_should_parse_type_alias_before_flags_with_fmod_version_constant() {
+        // because next FMOD_VERSION constant looks like Flags variant of FMOD_PORT_INDEX
+        let source = r#"
+            typedef struct FMOD_ASYNCREADINFO  FMOD_ASYNCREADINFO;
+            typedef unsigned long long         FMOD_PORT_INDEX;
+            
+            /*
+            FMOD constants
+            */
+            #define FMOD_VERSION    0x00020203 
+        "#;
+        assert_eq!(
+            parse(source),
+            Ok(Header {
+                opaque_types: vec![OpaqueType {
+                    name: "FMOD_ASYNCREADINFO".into()
+                }],
+                constants: vec![Constant {
+                    name: "FMOD_VERSION".into(),
+                    value: "0x00020203".into()
+                }],
+                flags: vec![],
+                enumerations: vec![],
+                structures: vec![],
+                callbacks: vec![],
+                type_aliases: vec![TypeAlias {
+                    base_type: FundamentalType("unsigned long long".into()),
+                    name: "FMOD_PORT_INDEX".into()
+                }]
+            })
+        );
+    }
+
+    #[test]
     fn test_should_ignore_preset() {
         let source = r#"
             #define FMOD_PRESET_OFF {  1000,    7,  11, 5000, 100, 100, 100, 250, 0,    20,  96, -80.0f }

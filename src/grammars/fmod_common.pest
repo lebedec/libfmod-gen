@@ -47,7 +47,8 @@ Literal = { ("-" | "_" | ASCII_ALPHANUMERIC)+ }
 value = @{Calculation | Literal }
 Constant = { "#define" ~ name ~ value }
 
-Flag = { "#define" ~ name ~ value }
+ensure_flag = _{ !"FMOD_VERSION" }
+Flag = { "#define" ~ ensure_flag ~ name ~ value }
 flags = { Flag+ }
 flags_type = { FundamentalType }
 Flags = { "typedef" ~ flags_type ~ name ~ ";" ~ flags  }

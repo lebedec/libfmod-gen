@@ -121,7 +121,9 @@ pub struct FMOD_COMPLEX {
     _unused: [u8; 0],
 }
 pub type FMOD_BOOL = c_int;
+pub type FMOD_PORT_INDEX = c_ulonglong;
 pub const FMOD_STUDIO_LOAD_MEMORY_ALIGNMENT: c_uint = 32;
+pub const FMOD_VERSION: c_uint = 0x00020203;
 pub const FMOD_MAX_CHANNEL_WIDTH: c_uint = 32;
 pub const FMOD_MAX_SYSTEMS: c_uint = 8;
 pub const FMOD_MAX_LISTENERS: c_uint = 8;

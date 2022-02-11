@@ -59,6 +59,11 @@ pub fn generate_constant_code(constant: &Constant) -> Result<TokenStream, Error>
         quote! {
             pub const #name: c_ulonglong = #value;
         }
+    } else if value.len() == "0xaaaabbcc".len() && value.starts_with("0x") {
+        let value = TokenStream::from_str(value)?;
+        quote! {
+            pub const #name: c_uint = #value;
+        }
     } else {
         let value = Literal::u32_unsuffixed(value.parse()?);
         quote! {
@@ -160,7 +165,7 @@ mod tests {
     }
 
     #[test]
-    fn test_should_generate_hex_constant() {
+    fn test_should_generate_hex_long_constant() {
         let mut api = Api::default();
         api.constants.push(Constant {
             name: "FMOD_PORT_INDEX_NONE".into(),
@@ -171,6 +176,22 @@ mod tests {
             use std::os::raw::{c_int, c_uint, c_ulonglong};
 
             pub const FMOD_PORT_INDEX_NONE: c_ulonglong = 0xFFFFFFFFFFFFFFFF;
+        };
+        assert_eq!(generate_api(api), Ok(format(code)))
+    }
+
+    #[test]
+    fn test_should_generate_hex_int_constant() {
+        let mut api = Api::default();
+        api.constants.push(Constant {
+            name: "FMOD_VERSION".into(),
+            value: "0x00020203".into(),
+        });
+        let code = quote! {
+            #![allow(non_camel_case_types)]
+            use std::os::raw::{c_int, c_uint, c_ulonglong};
+
+            pub const FMOD_VERSION: c_uint = 0x00020203;
         };
         assert_eq!(generate_api(api), Ok(format(code)))
     }
