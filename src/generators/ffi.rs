@@ -223,6 +223,23 @@ pub fn generate_callback_code(callback: &Callback) -> TokenStream {
     }
 }
 
+pub fn generate_flags_code(flags: &Flags) -> Result<TokenStream, Error> {
+    let name = format_ident!("{}", flags.name);
+    let base_type = map_type2(&flags.flags_type, &None, &None);
+    let mut values = vec![];
+    for flag in &flags.flags {
+        let value = TokenStream::from_str(&flag.value)?;
+        let flag = format_ident!("{}", flag.name);
+        values.push(quote! {
+            pub const #flag: #name = #value;
+        })
+    }
+    Ok(quote! {
+        pub type #name = #base_type;
+        #(#values)*
+    })
+}
+
 pub fn generate_api_code(api: Api) -> Result<TokenStream, Error> {
     let opaque_types: Vec<TokenStream> = api
         .opaque_types
@@ -248,15 +265,21 @@ pub fn generate_api_code(api: Api) -> Result<TokenStream, Error> {
 
     let callbacks: Vec<TokenStream> = api.callbacks.iter().map(generate_callback_code).collect();
 
+    let mut flags = vec![];
+    for flag in &api.flags {
+        flags.push(generate_flags_code(flag)?);
+    }
+
     Ok(quote! {
         #![allow(non_camel_case_types)]
         #![allow(non_snake_case)]
-        use std::os::raw::{c_char, c_float, c_int, c_uint, c_ulonglong, c_void};
+        use std::os::raw::{c_char, c_float, c_int, c_longlong, c_uint, c_ulonglong, c_void};
 
         #(#opaque_types)*
         #(#type_aliases)*
         #(#constants)*
         #(#enumerations)*
+        #(#flags)*
         #(#callbacks)*
     })
 }
@@ -271,7 +294,8 @@ mod tests {
     use crate::ffi::{generate_api, Api};
     use crate::models::Type::{FundamentalType, UserType};
     use crate::models::{
-        Argument, Callback, Constant, Enumeration, Enumerator, OpaqueType, Pointer, TypeAlias,
+        Argument, Callback, Constant, Enumeration, Enumerator, Flag, Flags, OpaqueType, Pointer,
+        TypeAlias,
     };
     use quote::__private::TokenStream;
 
@@ -293,7 +317,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
-            use std::os::raw::{c_char, c_float, c_int, c_uint, c_ulonglong, c_void};
+            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_uint, c_ulonglong, c_void};
 
             pub const FMOD_MAX_CHANNEL_WIDTH: c_uint = 32;
         };
@@ -310,7 +334,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
-            use std::os::raw::{c_char, c_float, c_int, c_uint, c_ulonglong, c_void};
+            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_uint, c_ulonglong, c_void};
 
             pub const FMOD_PORT_INDEX_NONE: c_ulonglong = 0xFFFFFFFFFFFFFFFF;
         };
@@ -327,7 +351,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
-            use std::os::raw::{c_char, c_float, c_int, c_uint, c_ulonglong, c_void};
+            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_uint, c_ulonglong, c_void};
 
             pub const FMOD_VERSION: c_uint = 0x00020203;
         };
@@ -344,7 +368,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
-            use std::os::raw::{c_char, c_float, c_int, c_uint, c_ulonglong, c_void};
+            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_uint, c_ulonglong, c_void};
 
             pub type FMOD_PORT_INDEX = c_ulonglong;
         };
@@ -360,7 +384,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
-            use std::os::raw::{c_char, c_float, c_int, c_uint, c_ulonglong, c_void};
+            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_uint, c_ulonglong, c_void};
 
             #[repr(C)]
             #[derive(Debug, Copy, Clone)]
@@ -383,7 +407,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
-            use std::os::raw::{c_char, c_float, c_int, c_uint, c_ulonglong, c_void};
+            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_uint, c_ulonglong, c_void};
 
             #[repr(C)]
             #[derive(Debug, Copy, Clone)]
@@ -423,7 +447,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
-            use std::os::raw::{c_char, c_float, c_int, c_uint, c_ulonglong, c_void};
+            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_uint, c_ulonglong, c_void};
 
             pub type FMOD_CHANNELCONTROL_DSP_INDEX = c_int;
             pub const FMOD_CHANNELCONTROL_DSP_HEAD: FMOD_CHANNELCONTROL_DSP_INDEX = -1;
@@ -452,7 +476,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
-            use std::os::raw::{c_char, c_float, c_int, c_uint, c_ulonglong, c_void};
+            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_uint, c_ulonglong, c_void};
 
             pub type FMOD_PLUGINTYPE = c_int;
             pub const FMOD_PLUGINTYPE_OUTPUT: FMOD_PLUGINTYPE = 0;
@@ -492,7 +516,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
-            use std::os::raw::{c_char, c_float, c_int, c_uint, c_ulonglong, c_void};
+            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_uint, c_ulonglong, c_void};
 
             pub type FMOD_SPEAKER = c_int;
             pub const FMOD_SPEAKER_NONE: FMOD_SPEAKER = -1;
@@ -522,7 +546,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
-            use std::os::raw::{c_char, c_float, c_int, c_uint, c_ulonglong, c_void};
+            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_uint, c_ulonglong, c_void};
 
             pub type FMOD_FILE_ASYNCDONE_FUNC =
                 Option<unsafe extern "C" fn(info: *mut FMOD_ASYNCREADINFO)>;
@@ -548,7 +572,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
-            use std::os::raw::{c_char, c_float, c_int, c_uint, c_ulonglong, c_void};
+            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_uint, c_ulonglong, c_void};
 
             pub type FMOD_DSP_LOG_FUNC =
                 Option<unsafe extern "C" fn(level: FMOD_DEBUG_FLAGS, ...)>;
@@ -582,12 +606,109 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
-            use std::os::raw::{c_char, c_float, c_int, c_uint, c_ulonglong, c_void};
+            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_uint, c_ulonglong, c_void};
 
             pub type FMOD_MEMORY_ALLOC_CALLBACK =
                 Option<unsafe extern "C" fn(size: c_uint, type_: FMOD_MEMORY_TYPE) -> *mut c_void>;
         };
 
+        assert_eq!(generate_api(api), Ok(format(code)));
+    }
+
+    #[test]
+    fn test_should_generate_flags() {
+        let mut api = Api::default();
+        api.flags.push(Flags {
+            flags_type: FundamentalType("unsigned int".into()),
+            name: "FMOD_DEBUG_FLAGS".into(),
+            flags: vec![
+                Flag {
+                    name: "FMOD_DEBUG_LEVEL_NONE".into(),
+                    value: "0x00000000".into(),
+                },
+                Flag {
+                    name: "FMOD_DEBUG_LEVEL_ERROR".into(),
+                    value: "0x00000001".into(),
+                },
+            ],
+        });
+        let code = quote! {
+            #![allow(non_camel_case_types)]
+            #![allow(non_snake_case)]
+            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_uint, c_ulonglong, c_void};
+
+            pub type FMOD_DEBUG_FLAGS = c_uint;
+            pub const FMOD_DEBUG_LEVEL_NONE: FMOD_DEBUG_FLAGS = 0x00000000;
+            pub const FMOD_DEBUG_LEVEL_ERROR: FMOD_DEBUG_FLAGS = 0x00000001;
+        };
+        assert_eq!(generate_api(api), Ok(format(code)));
+    }
+
+    #[test]
+    fn test_should_generate_flags_with_bitwise_calculation() {
+        let mut api = Api::default();
+        api.flags.push(Flags {
+            flags_type: FundamentalType("unsigned int".into()),
+            name: "FMOD_CHANNELMASK".into(),
+            flags: vec![
+                Flag {
+                    name: "FMOD_CHANNELMASK_FRONT_LEFT".into(),
+                    value: "0x00000001".into(),
+                },
+                Flag {
+                    name: "FMOD_CHANNELMASK_FRONT_RIGHT".into(),
+                    value: "0x00000002".into(),
+                },
+                Flag {
+                    name: "FMOD_CHANNELMASK_MONO".into(),
+                    value: "(FMOD_CHANNELMASK_FRONT_LEFT)".into(),
+                },
+                Flag {
+                    name: "FMOD_CHANNELMASK_STEREO".into(),
+                    value: "(FMOD_CHANNELMASK_FRONT_LEFT | FMOD_CHANNELMASK_FRONT_RIGHT)".into(),
+                },
+            ],
+        });
+        let code = quote! {
+            #![allow(non_camel_case_types)]
+            #![allow(non_snake_case)]
+            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_uint, c_ulonglong, c_void};
+
+            pub type FMOD_CHANNELMASK = c_uint;
+            pub const FMOD_CHANNELMASK_FRONT_LEFT: FMOD_CHANNELMASK = 0x00000001;
+            pub const FMOD_CHANNELMASK_FRONT_RIGHT: FMOD_CHANNELMASK = 0x00000002;
+            pub const FMOD_CHANNELMASK_MONO: FMOD_CHANNELMASK = (FMOD_CHANNELMASK_FRONT_LEFT);
+            pub const FMOD_CHANNELMASK_STEREO: FMOD_CHANNELMASK = (FMOD_CHANNELMASK_FRONT_LEFT | FMOD_CHANNELMASK_FRONT_RIGHT);
+        };
+        assert_eq!(generate_api(api), Ok(format(code)));
+    }
+
+    #[test]
+    fn test_should_generate_flags_with_arithmetic_calculation() {
+        let mut api = Api::default();
+        api.flags.push(Flags {
+            flags_type: FundamentalType("int".into()),
+            name: "FMOD_THREAD_PRIORITY".into(),
+            flags: vec![
+                Flag {
+                    name: "FMOD_THREAD_PRIORITY_PLATFORM_MIN".into(),
+                    value: "(-32 * 1024)".into(),
+                },
+                Flag {
+                    name: "FMOD_THREAD_PRIORITY_PLATFORM_MAX".into(),
+                    value: "( 32 * 1024)".into(),
+                },
+            ],
+        });
+        let code = quote! {
+            #![allow(non_camel_case_types)]
+            #![allow(non_snake_case)]
+            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_uint, c_ulonglong, c_void};
+
+            pub type FMOD_THREAD_PRIORITY = c_int;
+            pub const FMOD_THREAD_PRIORITY_PLATFORM_MIN: FMOD_THREAD_PRIORITY = (-32 * 1024);
+            pub const FMOD_THREAD_PRIORITY_PLATFORM_MAX: FMOD_THREAD_PRIORITY = ( 32 * 1024);
+        };
         assert_eq!(generate_api(api), Ok(format(code)));
     }
 }
