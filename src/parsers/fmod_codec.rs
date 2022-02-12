@@ -1,6 +1,4 @@
-use crate::models::{
-    Callback, Constant, Enumeration, Error, Flags, OpaqueType, Structure, TypeAlias,
-};
+use crate::models::{Callback, Constant, Error, Flags, OpaqueType, Structure};
 use crate::repr::JsonConverter;
 use pest::{error, Parser};
 

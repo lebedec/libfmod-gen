@@ -205,14 +205,20 @@ pub fn generate_callback_code(callback: &Callback) -> TokenStream {
         .map(generate_argument_code)
         .collect();
 
+    let varargs = if callback.varargs.is_some() {
+        Some(quote! {, ...})
+    } else {
+        None
+    };
+
     if &callback.return_type == &FundamentalType("void".into()) && callback.pointer.is_none() {
         quote! {
-            pub type #name = Option<unsafe extern "C" fn(#(#arguments),*)>;
+            pub type #name = Option<unsafe extern "C" fn(#(#arguments),* #varargs)>;
         }
     } else {
         let return_type = map_type2(&callback.return_type, &None, &callback.pointer);
         quote! {
-            pub type #name = Option<unsafe extern "C" fn(#(#arguments),*) -> #return_type>;
+            pub type #name = Option<unsafe extern "C" fn(#(#arguments),* #varargs) -> #return_type>;
         }
     }
 }
@@ -268,7 +274,6 @@ mod tests {
         Argument, Callback, Constant, Enumeration, Enumerator, OpaqueType, Pointer, TypeAlias,
     };
     use quote::__private::TokenStream;
-    use serde::de::Unexpected::Enum;
 
     fn format(code: TokenStream) -> String {
         rustfmt_wrapper::rustfmt(code).unwrap()
@@ -521,6 +526,32 @@ mod tests {
 
             pub type FMOD_FILE_ASYNCDONE_FUNC =
                 Option<unsafe extern "C" fn(info: *mut FMOD_ASYNCREADINFO)>;
+        };
+        assert_eq!(generate_api(api), Ok(format(code)));
+    }
+
+    #[test]
+    fn test_should_generate_callback_with_varargs() {
+        let mut api = Api::default();
+        api.callbacks.push(Callback {
+            return_type: FundamentalType("void".into()),
+            pointer: None,
+            name: "FMOD_DSP_LOG_FUNC".into(),
+            arguments: vec![Argument {
+                as_const: None,
+                argument_type: UserType("FMOD_DEBUG_FLAGS".into()),
+                pointer: None,
+                name: "level".to_string(),
+            }],
+            varargs: Some("...".into()),
+        });
+        let code = quote! {
+            #![allow(non_camel_case_types)]
+            #![allow(non_snake_case)]
+            use std::os::raw::{c_char, c_float, c_int, c_uint, c_ulonglong, c_void};
+
+            pub type FMOD_DSP_LOG_FUNC =
+                Option<unsafe extern "C" fn(level: FMOD_DEBUG_FLAGS, ...)>;
         };
         assert_eq!(generate_api(api), Ok(format(code)));
     }
