@@ -1,6 +1,6 @@
 use crate::models::{
-    Argument, Callback, Constant, Enumeration, Error, Flags, Function, OpaqueType, Pointer,
-    Structure, Type, TypeAlias,
+    Argument, Callback, Constant, Enumeration, Error, Field, Flags, Function, OpaqueType, Pointer,
+    Structure, Type, TypeAlias, Union,
 };
 
 use crate::models::Type::FundamentalType;
@@ -76,32 +76,11 @@ pub fn generate_constant_code(constant: &Constant) -> Result<TokenStream, Error>
     Ok(tokens)
 }
 
-pub fn map_type(c_type: &Type) -> Ident {
-    let name = match c_type {
-        FundamentalType(name) => match &name[..] {
-            "char" => "c_char",
-            "unsigned char" => "c_uchar",
-            "signed char" => "c_char",
-            "int" => "c_int",
-            "unsigned int" => "c_unit",
-            "short" => "c_short",
-            "unsigned short" => "c_ushort",
-            "long long" => "c_longlong",
-            "long" => "c_long",
-            "unsigned long long" => "c_ulonglong",
-            "unsigned long" => "c_ulong",
-            "float" => "c_float",
-            _ => name,
-        },
-        Type::UserType(name) => name,
-    };
-    format_ident!("{}", name)
-}
-
-pub fn map_type2(
+pub fn format_rust_type(
     c_type: &Type,
     as_const: &Option<String>,
     pointer: &Option<Pointer>,
+    as_array: &Option<TokenStream>,
 ) -> TokenStream {
     let name = match c_type {
         FundamentalType(name) => match &name[..] {
@@ -118,25 +97,32 @@ pub fn map_type2(
             "unsigned long" => "c_ulong",
             "float" => "c_float",
             "void" => "c_void",
-            "void*" => "c_void",
             _ => name,
         },
         Type::UserType(name) => name,
     };
     let name = format_ident!("{}", name);
-    match (as_const, pointer) {
+    let tokens = match (as_const, pointer) {
         (None, None) => quote! { #name },
         (None, Some(Pointer::NormalPointer(_))) => quote! { *mut #name },
         (None, Some(Pointer::DoublePointer(_))) => quote! { *mut *mut #name },
         (Some(_), Some(Pointer::NormalPointer(_))) => quote! { *const #name },
         (Some(_), Some(Pointer::DoublePointer(_))) => quote! { *const *const #name },
         (Some(_), None) => quote! { #name },
+    };
+    match as_array {
+        None => tokens,
+        Some(dimension) => {
+            quote! {
+                [#tokens; #dimension as usize]
+            }
+        }
     }
 }
 
 pub fn generate_type_alias_code(type_alias: &TypeAlias) -> TokenStream {
     let name = format_ident!("{}", type_alias.name);
-    let base = map_type(&type_alias.base_type);
+    let base = format_rust_type(&type_alias.base_type, &None, &None, &None);
 
     quote! {
         pub type #name = #base;
@@ -170,15 +156,16 @@ pub fn generate_enumeration_code(enumeration: &Enumeration) -> Result<TokenStrea
     })
 }
 
+const KEYWORDS: &[&str] = &[
+    "as", "break", "const", "continue", "crate", "else", "enum", "extern", "false", "fn", "for",
+    "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref", "return",
+    "self", "static", "struct", "super", "trait", "true", "type", "unsafe", "use", "where",
+    "while", "async", "await", "dyn", "try", "abstract", "become", "box", "do", "final", "macro",
+    "override", "priv", "typeof", "unsized", "virtual", "yield",
+];
+
 pub fn format_rust_ident(name: &String) -> Ident {
-    let keywords = &[
-        "as", "break", "const", "continue", "crate", "else", "enum", "extern", "false", "fn",
-        "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref",
-        "return", "self", "static", "struct", "super", "trait", "true", "type", "unsafe", "use",
-        "where", "while", "async", "await", "dyn", "try", "abstract", "become", "box", "do",
-        "final", "macro", "override", "priv", "typeof", "unsized", "virtual", "yield",
-    ];
-    if keywords.contains(&&*name.to_lowercase()) {
+    if KEYWORDS.contains(&&*name.to_lowercase()) {
         format_ident!("{}_", name)
     } else {
         format_ident!("{}", name)
@@ -187,10 +174,11 @@ pub fn format_rust_ident(name: &String) -> Ident {
 
 pub fn generate_argument_code(argument: &Argument) -> TokenStream {
     let name = format_rust_ident(&argument.name);
-    let argument_type = map_type2(
+    let argument_type = format_rust_type(
         &argument.argument_type,
         &argument.as_const,
         &argument.pointer,
+        &None,
     );
     quote! {
         #name: #argument_type
@@ -216,7 +204,7 @@ pub fn generate_callback_code(callback: &Callback) -> TokenStream {
             pub type #name = Option<unsafe extern "C" fn(#(#arguments),* #varargs)>;
         }
     } else {
-        let return_type = map_type2(&callback.return_type, &None, &callback.pointer);
+        let return_type = format_rust_type(&callback.return_type, &None, &callback.pointer, &None);
         quote! {
             pub type #name = Option<unsafe extern "C" fn(#(#arguments),* #varargs) -> #return_type>;
         }
@@ -225,7 +213,7 @@ pub fn generate_callback_code(callback: &Callback) -> TokenStream {
 
 pub fn generate_flags_code(flags: &Flags) -> Result<TokenStream, Error> {
     let name = format_ident!("{}", flags.name);
-    let base_type = map_type2(&flags.flags_type, &None, &None);
+    let base_type = format_rust_type(&flags.flags_type, &None, &None, &None);
     let mut values = vec![];
     for flag in &flags.flags {
         let value = TokenStream::from_str(&flag.value)?;
@@ -237,6 +225,71 @@ pub fn generate_flags_code(flags: &Flags) -> Result<TokenStream, Error> {
     Ok(quote! {
         pub type #name = #base_type;
         #(#values)*
+    })
+}
+
+pub fn generate_field_code(field: &Field) -> Result<TokenStream, Error> {
+    let name = format_rust_ident(&field.name);
+    let as_array = match &field.as_array {
+        None => None,
+        Some(dimension) => {
+            let dimension = TokenStream::from_str(&dimension[1..dimension.len() - 1])?;
+            Some(dimension)
+        }
+    };
+    let field_type = format_rust_type(
+        &field.field_type,
+        &field.as_const,
+        &field.pointer,
+        &as_array,
+    );
+    Ok(quote! {
+        pub #name: #field_type
+    })
+}
+
+pub fn generate_structure_code(structure: &Structure) -> Result<TokenStream, Error> {
+    let name = format_ident!("{}", structure.name);
+
+    let mut fields = vec![];
+    for field in &structure.fields {
+        fields.push(generate_field_code(field)?);
+    }
+
+    let union = match &structure.union {
+        None => None,
+        Some(union) => {
+            let name = format_ident!("{}__union", structure.name);
+            fields.push(quote! {
+                pub __union: #name
+            });
+            let mut fields = vec![];
+            for field in &union.fields {
+                fields.push(generate_field_code(field)?);
+            }
+            Some(quote! {
+                #[repr(C)]
+                #[derive(Copy, Clone)]
+                pub union #name {
+                    #(#fields),*
+                }
+            })
+        }
+    };
+
+    let debug = if structure.union.is_some() {
+        None
+    } else {
+        Some(quote! {Debug,})
+    };
+
+    Ok(quote! {
+        #[repr(C)]
+        #[derive(#debug Copy, Clone)]
+        pub struct #name {
+            #(#fields),*
+        }
+        #union
     })
 }
 
@@ -270,16 +323,22 @@ pub fn generate_api_code(api: Api) -> Result<TokenStream, Error> {
         flags.push(generate_flags_code(flag)?);
     }
 
+    let mut structures = vec![];
+    for structure in &api.structures {
+        structures.push(generate_structure_code(structure)?);
+    }
+
     Ok(quote! {
         #![allow(non_camel_case_types)]
         #![allow(non_snake_case)]
-        use std::os::raw::{c_char, c_float, c_int, c_longlong, c_uint, c_ulonglong, c_void};
+        use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
 
         #(#opaque_types)*
         #(#type_aliases)*
         #(#constants)*
         #(#enumerations)*
         #(#flags)*
+        #(#structures)*
         #(#callbacks)*
     })
 }
@@ -292,10 +351,11 @@ pub fn generate_api(api: Api) -> Result<String, Error> {
 #[cfg(test)]
 mod tests {
     use crate::ffi::{generate_api, Api};
+    use crate::models::Pointer::DoublePointer;
     use crate::models::Type::{FundamentalType, UserType};
     use crate::models::{
-        Argument, Callback, Constant, Enumeration, Enumerator, Flag, Flags, OpaqueType, Pointer,
-        TypeAlias,
+        Argument, Callback, Constant, Enumeration, Enumerator, Field, Flag, Flags, OpaqueType,
+        Pointer, Structure, TypeAlias, Union,
     };
     use quote::__private::TokenStream;
 
@@ -317,7 +377,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
-            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_uint, c_ulonglong, c_void};
+            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
 
             pub const FMOD_MAX_CHANNEL_WIDTH: c_uint = 32;
         };
@@ -334,7 +394,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
-            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_uint, c_ulonglong, c_void};
+            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
 
             pub const FMOD_PORT_INDEX_NONE: c_ulonglong = 0xFFFFFFFFFFFFFFFF;
         };
@@ -351,7 +411,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
-            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_uint, c_ulonglong, c_void};
+            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
 
             pub const FMOD_VERSION: c_uint = 0x00020203;
         };
@@ -368,7 +428,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
-            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_uint, c_ulonglong, c_void};
+            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
 
             pub type FMOD_PORT_INDEX = c_ulonglong;
         };
@@ -384,7 +444,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
-            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_uint, c_ulonglong, c_void};
+            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
 
             #[repr(C)]
             #[derive(Debug, Copy, Clone)]
@@ -407,7 +467,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
-            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_uint, c_ulonglong, c_void};
+            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
 
             #[repr(C)]
             #[derive(Debug, Copy, Clone)]
@@ -447,7 +507,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
-            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_uint, c_ulonglong, c_void};
+            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
 
             pub type FMOD_CHANNELCONTROL_DSP_INDEX = c_int;
             pub const FMOD_CHANNELCONTROL_DSP_HEAD: FMOD_CHANNELCONTROL_DSP_INDEX = -1;
@@ -476,7 +536,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
-            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_uint, c_ulonglong, c_void};
+            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
 
             pub type FMOD_PLUGINTYPE = c_int;
             pub const FMOD_PLUGINTYPE_OUTPUT: FMOD_PLUGINTYPE = 0;
@@ -516,7 +576,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
-            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_uint, c_ulonglong, c_void};
+            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
 
             pub type FMOD_SPEAKER = c_int;
             pub const FMOD_SPEAKER_NONE: FMOD_SPEAKER = -1;
@@ -546,7 +606,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
-            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_uint, c_ulonglong, c_void};
+            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
 
             pub type FMOD_FILE_ASYNCDONE_FUNC =
                 Option<unsafe extern "C" fn(info: *mut FMOD_ASYNCREADINFO)>;
@@ -572,7 +632,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
-            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_uint, c_ulonglong, c_void};
+            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
 
             pub type FMOD_DSP_LOG_FUNC =
                 Option<unsafe extern "C" fn(level: FMOD_DEBUG_FLAGS, ...)>;
@@ -606,7 +666,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
-            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_uint, c_ulonglong, c_void};
+            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
 
             pub type FMOD_MEMORY_ALLOC_CALLBACK =
                 Option<unsafe extern "C" fn(size: c_uint, type_: FMOD_MEMORY_TYPE) -> *mut c_void>;
@@ -635,7 +695,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
-            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_uint, c_ulonglong, c_void};
+            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
 
             pub type FMOD_DEBUG_FLAGS = c_uint;
             pub const FMOD_DEBUG_LEVEL_NONE: FMOD_DEBUG_FLAGS = 0x00000000;
@@ -672,7 +732,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
-            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_uint, c_ulonglong, c_void};
+            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
 
             pub type FMOD_CHANNELMASK = c_uint;
             pub const FMOD_CHANNELMASK_FRONT_LEFT: FMOD_CHANNELMASK = 0x00000001;
@@ -703,11 +763,219 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
-            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_uint, c_ulonglong, c_void};
+            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
 
             pub type FMOD_THREAD_PRIORITY = c_int;
             pub const FMOD_THREAD_PRIORITY_PLATFORM_MIN: FMOD_THREAD_PRIORITY = (-32 * 1024);
             pub const FMOD_THREAD_PRIORITY_PLATFORM_MAX: FMOD_THREAD_PRIORITY = ( 32 * 1024);
+        };
+        assert_eq!(generate_api(api), Ok(format(code)));
+    }
+
+    #[test]
+    fn test_should_generate_structure() {
+        let mut api = Api::default();
+        api.structures.push(Structure {
+            name: "FMOD_VECTOR".into(),
+            fields: vec![
+                Field {
+                    as_const: None,
+                    as_array: None,
+                    field_type: FundamentalType("float".into()),
+                    pointer: None,
+                    name: "x".into(),
+                },
+                Field {
+                    as_const: None,
+                    as_array: None,
+                    field_type: FundamentalType("float".into()),
+                    pointer: None,
+                    name: "y".into(),
+                },
+                Field {
+                    as_const: None,
+                    as_array: None,
+                    field_type: FundamentalType("float".into()),
+                    pointer: None,
+                    name: "z".into(),
+                },
+            ],
+            union: None,
+        });
+        let code = quote! {
+            #![allow(non_camel_case_types)]
+            #![allow(non_snake_case)]
+            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
+
+            #[repr(C)]
+            #[derive(Debug, Copy, Clone)]
+            pub struct FMOD_VECTOR {
+                pub x: c_float,
+                pub y: c_float,
+                pub z: c_float
+            }
+        };
+        assert_eq!(generate_api(api), Ok(format(code)));
+    }
+
+    #[test]
+    fn test_should_generate_structure_with_array_field() {
+        let mut api = Api::default();
+        api.structures.push(Structure {
+            name: "FMOD_GUID".into(),
+            fields: vec![
+                Field {
+                    as_const: None,
+                    as_array: None,
+                    field_type: FundamentalType("unsigned int".into()),
+                    pointer: None,
+                    name: "Data1".into(),
+                },
+                Field {
+                    as_const: None,
+                    as_array: None,
+                    field_type: FundamentalType("unsigned short".into()),
+                    pointer: None,
+                    name: "Data2".into(),
+                },
+                Field {
+                    as_const: None,
+                    as_array: None,
+                    field_type: FundamentalType("unsigned short".into()),
+                    pointer: None,
+                    name: "Data3".into(),
+                },
+                Field {
+                    as_const: None,
+                    as_array: Some("[8]".into()),
+                    field_type: FundamentalType("unsigned char".into()),
+                    pointer: None,
+                    name: "Data4".into(),
+                },
+            ],
+            union: None,
+        });
+        let code = quote! {
+            #![allow(non_camel_case_types)]
+            #![allow(non_snake_case)]
+            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
+
+            #[repr(C)]
+            #[derive(Debug, Copy, Clone)]
+            pub struct FMOD_GUID {
+                pub Data1: c_uint,
+                pub Data2: c_ushort,
+                pub Data3: c_ushort,
+                pub Data4: [c_uchar; 8 as usize],
+            }
+        };
+        assert_eq!(generate_api(api), Ok(format(code)));
+    }
+
+    #[test]
+    fn test_should_generate_structure_with_array_const_dimension_field() {
+        let mut api = Api::default();
+        api.structures.push(Structure {
+            name: "FMOD_DSP_LOUDNESS_METER_INFO_TYPE".into(),
+            fields: vec![Field {
+                as_const: None,
+                as_array: Some("[FMOD_DSP_LOUDNESS_METER_HISTOGRAM_SAMPLES]".into()),
+                field_type: FundamentalType("float".into()),
+                pointer: None,
+                name: "loudnesshistogram".into(),
+            }],
+            union: None,
+        });
+        let code = quote! {
+            #![allow(non_camel_case_types)]
+            #![allow(non_snake_case)]
+            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
+
+            #[repr(C)]
+            #[derive(Debug, Copy, Clone)]
+            pub struct FMOD_DSP_LOUDNESS_METER_INFO_TYPE {
+                pub loudnesshistogram: [c_float; FMOD_DSP_LOUDNESS_METER_HISTOGRAM_SAMPLES as usize],
+            }
+        };
+        assert_eq!(generate_api(api), Ok(format(code)));
+    }
+
+    #[test]
+    fn test_should_generate_structure_with_const_char_const_field() {
+        let mut api = Api::default();
+        api.structures.push(Structure {
+            name: "FMOD_DSP_PARAMETER_DESC_INT".into(),
+            fields: vec![Field {
+                as_const: Some("const".into()),
+                as_array: None,
+                field_type: FundamentalType("char".into()),
+                pointer: Some(DoublePointer("* const*".into())),
+                name: "valuenames".into(),
+            }],
+            union: None,
+        });
+        let code = quote! {
+            #![allow(non_camel_case_types)]
+            #![allow(non_snake_case)]
+            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
+
+            #[repr(C)]
+            #[derive(Debug, Copy, Clone)]
+            pub struct FMOD_DSP_PARAMETER_DESC_INT {
+                pub valuenames: *const *const c_char,
+            }
+        };
+        assert_eq!(generate_api(api), Ok(format(code)));
+    }
+
+    #[test]
+    fn test_should_generate_structure_with_union() {
+        let mut api = Api::default();
+        api.structures.push(Structure {
+            name: "FMOD_DSP_PARAMETER_DESC".into(),
+            fields: vec![Field {
+                as_const: None,
+                as_array: None,
+                field_type: UserType("FMOD_DSP_PARAMETER_TYPE".into()),
+                pointer: None,
+                name: "type".into(),
+            }],
+            union: Some(Union {
+                fields: vec![
+                    Field {
+                        as_const: None,
+                        as_array: None,
+                        field_type: UserType("FMOD_DSP_PARAMETER_DESC_FLOAT".into()),
+                        pointer: None,
+                        name: "floatdesc".into(),
+                    },
+                    Field {
+                        as_const: None,
+                        as_array: None,
+                        field_type: UserType("FMOD_DSP_PARAMETER_DESC_INT".into()),
+                        pointer: None,
+                        name: "intdesc".into(),
+                    },
+                ],
+            }),
+        });
+        let code = quote! {
+            #![allow(non_camel_case_types)]
+            #![allow(non_snake_case)]
+            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
+
+            #[repr(C)]
+            #[derive(Copy, Clone)]
+            pub struct FMOD_DSP_PARAMETER_DESC {
+                pub type_: FMOD_DSP_PARAMETER_TYPE,
+                pub __union: FMOD_DSP_PARAMETER_DESC__union,
+            }
+            #[repr(C)]
+            #[derive(Copy, Clone)]
+            pub union FMOD_DSP_PARAMETER_DESC__union {
+                pub floatdesc: FMOD_DSP_PARAMETER_DESC_FLOAT,
+                pub intdesc: FMOD_DSP_PARAMETER_DESC_INT,
+            }
         };
         assert_eq!(generate_api(api), Ok(format(code)));
     }

@@ -33,7 +33,17 @@ pub fn parse(source: &str) -> Result<Header, Error> {
             Rule::OpaqueType => header.opaque_types.push(converter.convert(declaration)?),
             Rule::Constant => header.constants.push(converter.convert(declaration)?),
             Rule::Flags => header.flags.push(converter.convert(declaration)?),
-            Rule::Structure => header.structures.push(converter.convert(declaration)?),
+            Rule::Structure => {
+                let structure: Structure = converter.convert(declaration)?;
+                if let Some(index) = header
+                    .opaque_types
+                    .iter()
+                    .position(|opaque_type| opaque_type.name == structure.name)
+                {
+                    header.opaque_types.remove(index);
+                }
+                header.structures.push(structure);
+            }
             Rule::Callback => header.callbacks.push(converter.convert(declaration)?),
             _ => continue,
         }
@@ -49,4 +59,40 @@ impl From<error::Error<Rule>> for Error {
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use crate::fmod_codec::{parse, Header};
+    use crate::models::Type::FundamentalType;
+    use crate::models::{Field, Structure};
+
+    #[test]
+    fn test_should_parse_structure_separated_from_typedef() {
+        let source = r#"
+            typedef struct FMOD_CODEC_STATE      FMOD_CODEC_STATE;
+
+            struct FMOD_CODEC_STATE
+            {
+                int                          numsubsounds;
+            };
+        "#;
+        assert_eq!(
+            parse(source),
+            Ok(Header {
+                opaque_types: vec![],
+                constants: vec![],
+                flags: vec![],
+                structures: vec![Structure {
+                    name: "FMOD_CODEC_STATE".into(),
+                    fields: vec![Field {
+                        as_const: None,
+                        as_array: None,
+                        field_type: FundamentalType("int".into()),
+                        pointer: None,
+                        name: "numsubsounds".into()
+                    }],
+                    union: None
+                }],
+                callbacks: vec![],
+            })
+        )
+    }
+}

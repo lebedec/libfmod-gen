@@ -14,7 +14,6 @@ include = _{ "#include \"fmod_dsp_effects.h\"" }
 Directive = { define | ifndef | endif | include }
 
 FundamentalType = {
-    "char* const*" |
     "char" |
     "unsigned char" |
     "signed char" |
@@ -53,7 +52,7 @@ Enumeration = { "typedef" ~ "enum" ~ name? ~ "{" ~ enumerators ~ ","? ~ "}" ~  n
 as_const = { "const" }
 as_array = { "[" ~ ("_" | ASCII_ALPHANUMERIC)+ ~ "]" }
 NormalPointer = { "*" }
-DoublePointer = { "**" }
+DoublePointer = { "**" | ("*" ~ "const" ~ "*") }
 pointer = { DoublePointer | NormalPointer }
 field_type = { FundamentalType | UserType }
 Field = { as_const? ~ field_type ~ pointer? ~ name ~ as_array? ~ ";" }

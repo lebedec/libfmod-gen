@@ -38,6 +38,7 @@ fn generate_lib_fmod(source: &str) {
     api.enumerations.extend(header.enumerations);
     api.callbacks.extend(header.callbacks);
     api.flags.extend(header.flags);
+    api.structures.extend(header.structures);
 
     let data = fs::read_to_string(source.join("api/core/inc/fmod.h")).expect("cannot read file");
     let header = fmod::parse(&data).unwrap();
@@ -51,6 +52,7 @@ fn generate_lib_fmod(source: &str) {
     api.enumerations.extend(header.enumerations);
     api.callbacks.extend(header.callbacks);
     api.flags.extend(header.flags);
+    api.structures.extend(header.structures);
 
     let data =
         fs::read_to_string(source.join("api/core/inc/fmod_codec.h")).expect("cannot read file");
@@ -59,6 +61,7 @@ fn generate_lib_fmod(source: &str) {
     api.constants.extend(header.constants);
     api.callbacks.extend(header.callbacks);
     api.flags.extend(header.flags);
+    api.structures.extend(header.structures);
 
     let data =
         fs::read_to_string(source.join("api/core/inc/fmod_output.h")).expect("cannot read file");
@@ -67,6 +70,7 @@ fn generate_lib_fmod(source: &str) {
     api.constants.extend(header.constants);
     api.callbacks.extend(header.callbacks);
     api.flags.extend(header.flags);
+    api.structures.extend(header.structures);
 
     let data =
         fs::read_to_string(source.join("api/core/inc/fmod_dsp.h")).expect("cannot read file");
@@ -76,23 +80,34 @@ fn generate_lib_fmod(source: &str) {
     api.enumerations.extend(header.enumerations);
     api.callbacks.extend(header.callbacks);
     api.flags.extend(header.flags);
+    api.structures.extend(header.structures);
 
     let data = fs::read_to_string(source.join("api/core/inc/fmod_dsp_effects.h"))
         .expect("cannot read file");
     let header = fmod_dsp_effects::parse(&data).unwrap();
     api.constants.extend(header.constants);
     api.enumerations.extend(header.enumerations);
+    api.structures.extend(header.structures);
 
     let data =
         fs::read_to_string(source.join("api/core/inc/fmod_errors.h")).expect("cannot read file");
     let header = fmod_errors::parse(&data).unwrap();
-    println!("FMOD Errors");
-    println!("Errors: {}", header.mapping.errors.len());
 
     // post processing
     api.opaque_types.push(OpaqueType {
         name: "FMOD_STUDIO_SYSTEM".into(),
     });
+
+    println!("FMOD API");
+    println!("Opaque Types: {}", api.opaque_types.len());
+    println!("Type Aliases: {}", api.type_aliases.len());
+    println!("Structures: {}", api.structures.len());
+    println!("Constants: {}", api.constants.len());
+    println!("Flags: {}", api.flags.len());
+    println!("Enumerations: {}", api.enumerations.len());
+    println!("Callbacks: {}", api.callbacks.len());
+    println!("Functions: {}", api.functions.len());
+    println!("Errors: {}", header.mapping.errors.len());
 
     let code = ffi::generate_api(api).unwrap();
     fs::write("./src/example.rs", code).unwrap();

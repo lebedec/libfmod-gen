@@ -36,7 +36,17 @@ pub fn parse(source: &str) -> Result<Header, Error> {
             Rule::Constant => header.constants.push(converter.convert(declaration)?),
             Rule::Flags => header.flags.push(converter.convert(declaration)?),
             Rule::Enumeration => header.enumerations.push(converter.convert(declaration)?),
-            Rule::Structure => header.structures.push(converter.convert(declaration)?),
+            Rule::Structure => {
+                let structure: Structure = converter.convert(declaration)?;
+                if let Some(index) = header
+                    .opaque_types
+                    .iter()
+                    .position(|opaque_type| opaque_type.name == structure.name)
+                {
+                    header.opaque_types.remove(index);
+                }
+                header.structures.push(structure);
+            }
             Rule::Callback => header.callbacks.push(converter.convert(declaration)?),
             _ => continue,
         }
@@ -54,6 +64,7 @@ impl From<error::Error<Rule>> for Error {
 #[cfg(test)]
 mod tests {
     use crate::fmod_dsp::{parse, Header};
+    use crate::models::Pointer::DoublePointer;
     use crate::models::Type::{FundamentalType, UserType};
     use crate::models::{Argument, Callback, Enumeration, Enumerator, Field, Structure};
 
@@ -189,8 +200,8 @@ mod tests {
                         Field {
                             as_const: Some("const".into()),
                             as_array: None,
-                            field_type: FundamentalType("char* const*".into()),
-                            pointer: None,
+                            field_type: FundamentalType("char".into()),
+                            pointer: Some(DoublePointer("* const*".into())),
                             name: "valuenames".into()
                         },
                     ],

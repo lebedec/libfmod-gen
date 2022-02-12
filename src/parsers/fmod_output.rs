@@ -33,7 +33,17 @@ pub fn parse(source: &str) -> Result<Header, Error> {
             Rule::OpaqueType => header.opaque_types.push(converter.convert(declaration)?),
             Rule::Constant => header.constants.push(converter.convert(declaration)?),
             Rule::Flags => header.flags.push(converter.convert(declaration)?),
-            Rule::Structure => header.structures.push(converter.convert(declaration)?),
+            Rule::Structure => {
+                let structure: Structure = converter.convert(declaration)?;
+                if let Some(index) = header
+                    .opaque_types
+                    .iter()
+                    .position(|opaque_type| opaque_type.name == structure.name)
+                {
+                    header.opaque_types.remove(index);
+                }
+                header.structures.push(structure);
+            }
             Rule::Callback => header.callbacks.push(converter.convert(declaration)?),
             _ => continue,
         }
