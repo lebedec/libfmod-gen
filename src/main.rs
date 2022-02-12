@@ -29,6 +29,8 @@ fn generate_lib_fmod(source: &str) {
     let data =
         fs::read_to_string(source.join("api/studio/inc/fmod_studio.h")).expect("cannot read file");
     let header = fmod_studio::parse(&data).unwrap();
+    api.functions
+        .insert("fmodstudio".into(), header.functions.clone());
 
     let data = fs::read_to_string(source.join("api/studio/inc/fmod_studio_common.h"))
         .expect("cannot read file");
@@ -42,6 +44,8 @@ fn generate_lib_fmod(source: &str) {
 
     let data = fs::read_to_string(source.join("api/core/inc/fmod.h")).expect("cannot read file");
     let header = fmod::parse(&data).unwrap();
+    api.functions
+        .insert("fmod".into(), header.functions.clone());
 
     let data =
         fs::read_to_string(source.join("api/core/inc/fmod_common.h")).expect("cannot read file");

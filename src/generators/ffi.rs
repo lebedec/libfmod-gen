@@ -293,6 +293,36 @@ pub fn generate_structure_code(structure: &Structure) -> Result<TokenStream, Err
     })
 }
 
+pub fn generate_library_code(link: &String, api: &Vec<Function>) -> TokenStream {
+    let mut functions = vec![];
+    for function in api {
+        let name = format_ident!("{}", function.name);
+        let arguments: Vec<TokenStream> = function
+            .arguments
+            .iter()
+            .map(generate_argument_code)
+            .collect();
+
+        let tokens = if &function.return_type == &FundamentalType("void".into()) {
+            quote! {
+               pub fn #name(#(#arguments),*);
+            }
+        } else {
+            let return_type = format_rust_type(&function.return_type, &None, &None, &None);
+            quote! {
+                pub fn #name(#(#arguments),*) -> #return_type;
+            }
+        };
+        functions.push(tokens);
+    }
+    quote! {
+        #[link(name = #link)]
+        extern "C" {
+            #(#functions)*
+        }
+    }
+}
+
 pub fn generate_api_code(api: Api) -> Result<TokenStream, Error> {
     let opaque_types: Vec<TokenStream> = api
         .opaque_types
@@ -328,6 +358,11 @@ pub fn generate_api_code(api: Api) -> Result<TokenStream, Error> {
         structures.push(generate_structure_code(structure)?);
     }
 
+    let mut libraries = vec![];
+    for (link, functions) in &api.functions {
+        libraries.push(generate_library_code(link, functions));
+    }
+
     Ok(quote! {
         #![allow(non_camel_case_types)]
         #![allow(non_snake_case)]
@@ -340,6 +375,7 @@ pub fn generate_api_code(api: Api) -> Result<TokenStream, Error> {
         #(#flags)*
         #(#structures)*
         #(#callbacks)*
+        #(#libraries)*
     })
 }
 
@@ -354,8 +390,8 @@ mod tests {
     use crate::models::Pointer::DoublePointer;
     use crate::models::Type::{FundamentalType, UserType};
     use crate::models::{
-        Argument, Callback, Constant, Enumeration, Enumerator, Field, Flag, Flags, OpaqueType,
-        Pointer, Structure, TypeAlias, Union,
+        Argument, Callback, Constant, Enumeration, Enumerator, Field, Flag, Flags, Function,
+        OpaqueType, Pointer, Structure, TypeAlias, Union,
     };
     use quote::__private::TokenStream;
 
@@ -975,6 +1011,46 @@ mod tests {
             pub union FMOD_DSP_PARAMETER_DESC__union {
                 pub floatdesc: FMOD_DSP_PARAMETER_DESC_FLOAT,
                 pub intdesc: FMOD_DSP_PARAMETER_DESC_INT,
+            }
+        };
+        assert_eq!(generate_api(api), Ok(format(code)));
+    }
+
+    #[test]
+    fn test_should_generate_function() {
+        let mut api = Api::default();
+        api.functions.insert(
+            "fmod".into(),
+            vec![Function {
+                return_type: UserType("FMOD_RESULT".into()),
+                name: "FMOD_System_Create".into(),
+                arguments: vec![
+                    Argument {
+                        as_const: None,
+                        argument_type: UserType("FMOD_SYSTEM".into()),
+                        pointer: Some(DoublePointer("**".into())),
+                        name: "system".into(),
+                    },
+                    Argument {
+                        as_const: None,
+                        argument_type: FundamentalType("unsigned int".into()),
+                        pointer: None,
+                        name: "headerversion".into(),
+                    },
+                ],
+            }],
+        );
+        let code = quote! {
+            #![allow(non_camel_case_types)]
+            #![allow(non_snake_case)]
+            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
+
+            #[link(name = "fmod")]
+            extern "C" {
+                pub fn FMOD_System_Create(
+                    system: *mut *mut FMOD_SYSTEM,
+                    headerversion: c_uint,
+                ) -> FMOD_RESULT;
             }
         };
         assert_eq!(generate_api(api), Ok(format(code)));
