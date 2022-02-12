@@ -1,13 +1,13 @@
 use crate::models::{
     Argument, Callback, Constant, Enumeration, Error, Field, Flags, Function, OpaqueType, Pointer,
-    Structure, Type, TypeAlias,
+    Preset, Structure, Type, TypeAlias,
 };
 
 use crate::models::Type::FundamentalType;
 use quote::__private::{Ident, LexError, Literal, TokenStream};
 use quote::quote;
 use std::collections::HashMap;
-use std::num::ParseIntError;
+use std::num::{ParseFloatError, ParseIntError};
 use std::str::FromStr;
 
 #[derive(Debug, Default)]
@@ -20,6 +20,7 @@ pub struct Api {
     pub callbacks: Vec<Callback>,
     pub type_aliases: Vec<TypeAlias>,
     pub functions: HashMap<String, Vec<Function>>,
+    pub presets: Vec<Preset>,
 }
 
 impl From<rustfmt_wrapper::Error> for Error {
@@ -31,6 +32,12 @@ impl From<rustfmt_wrapper::Error> for Error {
 impl From<ParseIntError> for Error {
     fn from(error: ParseIntError) -> Self {
         Error::ParseInt(error.to_string())
+    }
+}
+
+impl From<ParseFloatError> for Error {
+    fn from(error: ParseFloatError) -> Self {
+        Error::ParseFloat(error.to_string())
     }
 }
 
@@ -323,6 +330,31 @@ pub fn generate_library_code(link: &String, api: &Vec<Function>) -> TokenStream 
     }
 }
 
+pub fn generate_preset_code(structure: &Structure, preset: &Preset) -> Result<TokenStream, Error> {
+    let name = format_ident!("{}", preset.name);
+    let mut fields: Vec<TokenStream> = vec![];
+    for (index, value) in preset.values.iter().enumerate() {
+        let value = if value.ends_with("f") {
+            &value[0..value.len() - 1]
+        } else {
+            &value[..]
+        };
+        let value: f32 = value.parse()?;
+        let field = format_rust_ident(&structure.fields[index].name);
+        let value = Literal::f32_unsuffixed(value);
+        fields.push(quote! {
+            #field: #value
+        });
+    }
+    let structure = format_ident!("{}", structure.name);
+
+    Ok(quote! {
+        pub const #name: #structure = #structure {
+            #(#fields),*
+        };
+    })
+}
+
 pub fn generate_api_code(api: Api) -> Result<TokenStream, Error> {
     let opaque_types: Vec<TokenStream> = api
         .opaque_types
@@ -363,6 +395,17 @@ pub fn generate_api_code(api: Api) -> Result<TokenStream, Error> {
         libraries.push(generate_library_code(link, functions));
     }
 
+    let mut presets = vec![];
+    if let Some(structure) = api
+        .structures
+        .iter()
+        .find(|structure| structure.name == "FMOD_REVERB_PROPERTIES")
+    {
+        for preset in &api.presets {
+            presets.push(generate_preset_code(structure, preset)?);
+        }
+    }
+
     Ok(quote! {
         #![allow(non_camel_case_types)]
         #![allow(non_snake_case)]
@@ -375,6 +418,7 @@ pub fn generate_api_code(api: Api) -> Result<TokenStream, Error> {
         #(#enumerations)*
         #(#flags)*
         #(#structures)*
+        #(#presets)*
         #(#callbacks)*
         #(#libraries)*
     })
@@ -392,7 +436,7 @@ mod tests {
     use crate::models::Type::{FundamentalType, UserType};
     use crate::models::{
         Argument, Callback, Constant, Enumeration, Enumerator, Field, Flag, Flags, Function,
-        OpaqueType, Pointer, Structure, TypeAlias, Union,
+        OpaqueType, Pointer, Preset, Structure, TypeAlias, Union,
     };
     use quote::__private::TokenStream;
 
@@ -1033,6 +1077,54 @@ mod tests {
                 pub floatdesc: FMOD_DSP_PARAMETER_DESC_FLOAT,
                 pub intdesc: FMOD_DSP_PARAMETER_DESC_INT,
             }
+        };
+        assert_eq!(generate_api(api), Ok(format(code)));
+    }
+
+    #[test]
+    fn test_should_generate_preset() {
+        let mut api = Api::default();
+        api.structures.push(Structure {
+            name: "FMOD_REVERB_PROPERTIES".to_string(),
+            fields: vec![
+                Field {
+                    as_const: None,
+                    as_array: None,
+                    field_type: FundamentalType("float".into()),
+                    pointer: None,
+                    name: "DecayTime".into(),
+                },
+                Field {
+                    as_const: None,
+                    as_array: None,
+                    field_type: FundamentalType("float".into()),
+                    pointer: None,
+                    name: "EarlyDelay".into(),
+                },
+            ],
+            union: None,
+        });
+        api.presets.push(Preset {
+            name: "FMOD_PRESET_OFF".into(),
+            values: vec!["96".into(), "-8.0f".into()],
+        });
+        let code = quote! {
+            #![allow(non_camel_case_types)]
+            #![allow(non_snake_case)]
+            #![allow(unused_parens)]
+            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
+
+            #[repr(C)]
+            #[derive(Debug, Copy, Clone)]
+            pub struct FMOD_REVERB_PROPERTIES {
+                pub DecayTime: c_float,
+                pub EarlyDelay: c_float,
+            }
+
+            pub const FMOD_PRESET_OFF: FMOD_REVERB_PROPERTIES = FMOD_REVERB_PROPERTIES {
+                DecayTime: 96.0,
+                EarlyDelay: -8.0,
+            };
         };
         assert_eq!(generate_api(api), Ok(format(code)));
     }

@@ -56,6 +56,7 @@ fn generate_lib_fmod(source: &str) {
     api.callbacks.extend(header.callbacks);
     api.flags.extend(header.flags);
     api.structures.extend(header.structures);
+    api.presets.extend(header.presets);
 
     let data =
         fs::read_to_string(source.join("api/core/inc/fmod_codec.h")).expect("cannot read file");

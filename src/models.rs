@@ -7,7 +7,9 @@ pub enum Error {
     Serde(String),
     Fmt(String),
     ParseInt(String),
+    ParseFloat(String),
     LexError(String),
+    StructureNotFound,
 }
 
 impl From<serde_json::Error> for Error {
