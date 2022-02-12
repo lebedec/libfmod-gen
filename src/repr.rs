@@ -37,6 +37,7 @@ impl JsonConverter {
         T: DeserializeOwned,
         R: RuleType,
     {
-        serde_json::from_value(self.convert_to_value(pair))
+        let value = self.convert_to_value(pair);
+        serde_json::from_value(value)
     }
 }

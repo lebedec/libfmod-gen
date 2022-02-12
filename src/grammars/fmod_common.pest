@@ -74,7 +74,9 @@ return_type = { FundamentalType | UserType}
 varargs = { "," ~ "..." }
 Callback = { "typedef" ~ return_type ~ pointer? ~ ("(F_CALLBACK *" | "(F_CALL *") ~ name ~ ")" ~ "(" ~ arguments ~ varargs?  ~ ")" ~  ";" }
 
-Preset = { "#define" ~ name ~ "{" ~ (!"}" ~ ANY)* ~ "}" }
+literal = @{ ("." | "-" | ASCII_ALPHANUMERIC)+ }
+values = { (","? ~ literal)* }
+Preset = { "#define" ~ name ~ "{" ~ values ~ "}" }
 
 declaration = _{
 	ImportHelper |

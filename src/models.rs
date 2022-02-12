@@ -125,3 +125,9 @@ pub struct ErrorString {
 pub struct ErrorStringMapping {
     pub errors: Vec<ErrorString>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct Preset {
+    pub name: String,
+    pub values: Vec<String>,
+}

@@ -1,6 +1,6 @@
 use crate::models::{
     Argument, Callback, Constant, Enumeration, Error, Field, Flags, Function, OpaqueType, Pointer,
-    Structure, Type, TypeAlias, Union,
+    Structure, Type, TypeAlias,
 };
 
 use crate::models::Type::FundamentalType;
@@ -366,6 +366,7 @@ pub fn generate_api_code(api: Api) -> Result<TokenStream, Error> {
     Ok(quote! {
         #![allow(non_camel_case_types)]
         #![allow(non_snake_case)]
+        #![allow(unused_parens)]
         use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
 
         #(#opaque_types)*
@@ -413,6 +414,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
+            #![allow(unused_parens)]
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
 
             pub const FMOD_MAX_CHANNEL_WIDTH: c_uint = 32;
@@ -430,6 +432,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
+            #![allow(unused_parens)]
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
 
             pub const FMOD_PORT_INDEX_NONE: c_ulonglong = 0xFFFFFFFFFFFFFFFF;
@@ -447,6 +450,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
+            #![allow(unused_parens)]
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
 
             pub const FMOD_VERSION: c_uint = 0x00020203;
@@ -464,6 +468,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
+            #![allow(unused_parens)]
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
 
             pub type FMOD_PORT_INDEX = c_ulonglong;
@@ -480,6 +485,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
+            #![allow(unused_parens)]
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
 
             #[repr(C)]
@@ -503,6 +509,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
+            #![allow(unused_parens)]
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
 
             #[repr(C)]
@@ -543,6 +550,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
+            #![allow(unused_parens)]
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
 
             pub type FMOD_CHANNELCONTROL_DSP_INDEX = c_int;
@@ -572,6 +580,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
+            #![allow(unused_parens)]
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
 
             pub type FMOD_PLUGINTYPE = c_int;
@@ -612,6 +621,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
+            #![allow(unused_parens)]
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
 
             pub type FMOD_SPEAKER = c_int;
@@ -642,6 +652,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
+            #![allow(unused_parens)]
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
 
             pub type FMOD_FILE_ASYNCDONE_FUNC =
@@ -668,6 +679,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
+            #![allow(unused_parens)]
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
 
             pub type FMOD_DSP_LOG_FUNC =
@@ -702,6 +714,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
+            #![allow(unused_parens)]
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
 
             pub type FMOD_MEMORY_ALLOC_CALLBACK =
@@ -731,6 +744,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
+            #![allow(unused_parens)]
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
 
             pub type FMOD_DEBUG_FLAGS = c_uint;
@@ -768,6 +782,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
+            #![allow(unused_parens)]
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
 
             pub type FMOD_CHANNELMASK = c_uint;
@@ -799,6 +814,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
+            #![allow(unused_parens)]
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
 
             pub type FMOD_THREAD_PRIORITY = c_int;
@@ -841,6 +857,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
+            #![allow(unused_parens)]
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
 
             #[repr(C)]
@@ -894,6 +911,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
+            #![allow(unused_parens)]
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
 
             #[repr(C)]
@@ -925,6 +943,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
+            #![allow(unused_parens)]
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
 
             #[repr(C)]
@@ -953,6 +972,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
+            #![allow(unused_parens)]
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
 
             #[repr(C)]
@@ -998,6 +1018,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
+            #![allow(unused_parens)]
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
 
             #[repr(C)]
@@ -1043,6 +1064,7 @@ mod tests {
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
+            #![allow(unused_parens)]
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
 
             #[link(name = "fmod")]

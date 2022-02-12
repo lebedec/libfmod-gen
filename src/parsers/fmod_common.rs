@@ -1,5 +1,5 @@
 use crate::models::{
-    Callback, Constant, Enumeration, Error, Flags, OpaqueType, Structure, TypeAlias,
+    Callback, Constant, Enumeration, Error, Flags, OpaqueType, Preset, Structure, TypeAlias,
 };
 use crate::repr::JsonConverter;
 use pest::{error, Parser};
@@ -17,6 +17,7 @@ pub struct Header {
     pub structures: Vec<Structure>,
     pub callbacks: Vec<Callback>,
     pub type_aliases: Vec<TypeAlias>,
+    pub presets: Vec<Preset>,
 }
 
 pub fn parse(source: &str) -> Result<Header, Error> {
@@ -29,6 +30,7 @@ pub fn parse(source: &str) -> Result<Header, Error> {
         String::from("enumerators"),
         String::from("fields"),
         String::from("arguments"),
+        String::from("values"),
     ];
     let converter = JsonConverter::new(arrays);
 
@@ -52,6 +54,7 @@ pub fn parse(source: &str) -> Result<Header, Error> {
             }
             Rule::Callback => header.callbacks.push(converter.convert(declaration)?),
             Rule::TypeAlias => header.type_aliases.push(converter.convert(declaration)?),
+            Rule::Preset => header.presets.push(converter.convert(declaration)?),
             _ => continue,
         }
     }
@@ -71,7 +74,7 @@ mod tests {
     use crate::models::Type::FundamentalType;
     use crate::models::{
         Argument, Callback, Constant, Enumeration, Enumerator, Field, Flag, Flags, OpaqueType,
-        Pointer, Structure, TypeAlias,
+        Pointer, Preset, Structure, TypeAlias,
     };
 
     fn normal() -> Option<Pointer> {
@@ -153,7 +156,8 @@ mod tests {
                 type_aliases: vec![TypeAlias {
                     base_type: FundamentalType("unsigned long long".into()),
                     name: "FMOD_PORT_INDEX".into()
-                }]
+                }],
+                presets: vec![]
             })
         )
     }
@@ -174,7 +178,8 @@ mod tests {
                 enumerations: vec![],
                 structures: vec![],
                 callbacks: vec![],
-                type_aliases: vec![]
+                type_aliases: vec![],
+                presets: vec![]
             })
         )
     }
@@ -196,7 +201,8 @@ mod tests {
                 enumerations: vec![],
                 structures: vec![],
                 callbacks: vec![],
-                type_aliases: vec![]
+                type_aliases: vec![],
+                presets: vec![]
             })
         )
     }
@@ -230,7 +236,8 @@ mod tests {
                 enumerations: vec![],
                 structures: vec![],
                 callbacks: vec![],
-                type_aliases: vec![]
+                type_aliases: vec![],
+                presets: vec![]
             })
         )
     }
@@ -275,7 +282,8 @@ mod tests {
                 enumerations: vec![],
                 structures: vec![],
                 callbacks: vec![],
-                type_aliases: vec![]
+                type_aliases: vec![],
+                presets: vec![]
             })
         )
     }
@@ -309,7 +317,8 @@ mod tests {
                 enumerations: vec![],
                 structures: vec![],
                 callbacks: vec![],
-                type_aliases: vec![]
+                type_aliases: vec![],
+                presets: vec![]
             })
         )
     }
@@ -363,7 +372,8 @@ mod tests {
                 enumerations: vec![],
                 structures: vec![],
                 callbacks: vec![],
-                type_aliases: vec![]
+                type_aliases: vec![],
+                presets: vec![]
             })
         )
     }
@@ -404,7 +414,8 @@ mod tests {
                 enumerations: vec![],
                 structures: vec![],
                 callbacks: vec![],
-                type_aliases: vec![]
+                type_aliases: vec![],
+                presets: vec![]
             })
         )
     }
@@ -438,17 +449,33 @@ mod tests {
                 type_aliases: vec![TypeAlias {
                     base_type: FundamentalType("unsigned long long".into()),
                     name: "FMOD_PORT_INDEX".into()
-                }]
+                }],
+                presets: vec![]
             })
         );
     }
 
     #[test]
-    fn test_should_ignore_preset() {
+    fn test_should_parse_preset() {
         let source = r#"
-            #define FMOD_PRESET_OFF {  1000,    7,  11, 5000, 100, 100, 100, 250, 0,    20,  96, -80.0f }
+            #define FMOD_PRESET_OFF {  1000,    7,  -80.0f }
         "#;
-        assert_eq!(parse(source), Ok(Header::default()))
+        assert_eq!(
+            parse(source),
+            Ok(Header {
+                opaque_types: vec![],
+                constants: vec![],
+                flags: vec![],
+                enumerations: vec![],
+                structures: vec![],
+                callbacks: vec![],
+                type_aliases: vec![],
+                presets: vec![Preset {
+                    name: "FMOD_PRESET_OFF".into(),
+                    values: vec!["1000".into(), "7".into(), "-80.0f".into()]
+                }]
+            })
+        )
     }
 
     #[test]
@@ -491,7 +518,8 @@ mod tests {
                 }],
                 structures: vec![],
                 callbacks: vec![],
-                type_aliases: vec![]
+                type_aliases: vec![],
+                presets: vec![]
             })
         )
     }
@@ -522,7 +550,8 @@ mod tests {
                     }],
                     varargs: None
                 }],
-                type_aliases: vec![]
+                type_aliases: vec![],
+                presets: vec![]
             })
         )
     }
@@ -572,7 +601,8 @@ mod tests {
                     union: None
                 }],
                 callbacks: vec![],
-                type_aliases: vec![]
+                type_aliases: vec![],
+                presets: vec![]
             })
         )
     }
@@ -604,7 +634,8 @@ mod tests {
                     union: None
                 }],
                 callbacks: vec![],
-                type_aliases: vec![]
+                type_aliases: vec![],
+                presets: vec![]
             })
         )
     }

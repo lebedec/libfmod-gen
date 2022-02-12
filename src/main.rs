@@ -15,7 +15,6 @@ use crate::parsers::{
 use std::fs;
 use std::path::Path;
 
-mod example;
 mod generators;
 mod models;
 mod parsers;
@@ -114,7 +113,7 @@ fn generate_lib_fmod(source: &str) {
     println!("Errors: {}", header.mapping.errors.len());
 
     let code = ffi::generate_api(api).unwrap();
-    fs::write("./src/example.rs", code).unwrap();
+    fs::write("../libfmod/src/ffi.rs", code).unwrap();
 }
 
 fn main() {
