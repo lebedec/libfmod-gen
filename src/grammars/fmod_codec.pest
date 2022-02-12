@@ -7,17 +7,10 @@ COMMENT = _{
 name = @{ ("_" | ASCII_ALPHANUMERIC)+ }
 string = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
 
-define = _{ "#define" ~ "_FMOD_COMMON_H" }
-ifndef = _{ "#ifndef" ~ "_FMOD_COMMON_H" }
+define = _{ "#define" ~ "_FMOD_CODEC_H" }
+ifndef = _{ "#ifndef" ~ "_FMOD_CODEC_H" }
 endif = _{ "#endif" }
-include = _{ (
-	"#include \"fmod_codec.h\"" |
-	"#include \"fmod_dsp.h\"" |
-	"#include \"fmod_output.h\""
-) }
-Directive = { define | ifndef | endif | include }
-
-ImportHelper = {"#define F_CALLBACK F_CALL" | ("#if" ~ (!"#endif" ~ ANY)* ~ "#endif")}
+Directive = { define | ifndef | endif  }
 
 FundamentalType = {
     "char" |
@@ -36,9 +29,6 @@ FundamentalType = {
 }
 UserType = @{name}
 
-base_type = { FundamentalType | UserType }
-TypeAlias = { "typedef" ~ base_type ~ name ~ ";" }
-
 OpaqueType = { "typedef" ~ "struct" ~ name ~ name ~ ";"}
 
 Calculation = { "(" ~ (!")" ~ ANY)* ~ ")" }
@@ -51,10 +41,6 @@ Flag = { "#define" ~ ensure_flag ~ name ~ value }
 flags = { Flag+ }
 flags_type = { FundamentalType }
 Flags = { "typedef" ~ flags_type ~ name ~ ";" ~ flags  }
-
-Enumerator = { ","? ~ name ~ ("=" ~ value)? }
-enumerators = { Enumerator* }
-Enumeration = { "typedef" ~ "enum" ~ name ~ "{" ~ enumerators ~ "}" ~  name ~ ";" }
 
 as_const = { "const" }
 as_array = { "[" ~ ("_" | ASCII_ALPHANUMERIC)+ ~ "]" }
@@ -74,17 +60,14 @@ return_type = { FundamentalType | UserType}
 varargs = { "," ~ "..." }
 Callback = { "typedef" ~ return_type ~ pointer? ~ ("(F_CALLBACK *" | "(F_CALL *") ~ name ~ ")" ~ "(" ~ arguments ~ varargs?  ~ ")" ~  ";" }
 
-Preset = { "#define" ~ name ~ "{" ~ (!"}" ~ ANY)* ~ "}" }
+Macros = {"#define" ~ name ~ "(" ~ (!"#" ~ ANY)* }
 
 declaration = _{
-	ImportHelper |
     OpaqueType |
+    Macros |
     Directive |
     Flags |
-    TypeAlias |
-    Preset |
     Constant |
-    Enumeration |
     Structure |
     Callback
 }

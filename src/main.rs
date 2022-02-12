@@ -9,8 +9,8 @@ extern crate pest_derive;
 use crate::generators::ffi;
 use crate::models::OpaqueType;
 use crate::parsers::{
-    fmod, fmod_common, fmod_dsp, fmod_dsp_effects, fmod_errors, fmod_output, fmod_studio,
-    fmod_studio_common,
+    fmod, fmod_codec, fmod_common, fmod_dsp, fmod_dsp_effects, fmod_errors, fmod_output,
+    fmod_studio, fmod_studio_common,
 };
 use std::fs;
 use std::path::Path;
@@ -48,6 +48,13 @@ fn generate_lib_fmod(source: &str) {
     api.type_aliases.extend(header.type_aliases);
     api.constants.extend(header.constants);
     api.enumerations.extend(header.enumerations);
+    api.callbacks.extend(header.callbacks);
+
+    let data =
+        fs::read_to_string(source.join("api/core/inc/fmod_codec.h")).expect("cannot read file");
+    let header = fmod_codec::parse(&data).unwrap();
+    api.opaque_types.extend(header.opaque_types);
+    api.constants.extend(header.constants);
     api.callbacks.extend(header.callbacks);
 
     let data =

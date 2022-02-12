@@ -58,9 +58,10 @@ Structure = { "typedef"? ~ "struct" ~ name ~ "{" ~ fields ~ union? ~ "}" ~ name?
 
 argument_type = { FundamentalType | UserType }
 Argument = { as_const? ~ argument_type ~ pointer? ~ name}
-arguments = { "(" ~ (","? ~ Argument)* ~ ")" }
+arguments = { (","? ~ Argument)* }
 return_type = { FundamentalType | UserType}
-Callback = { "typedef" ~ return_type ~ "(F_CALLBACK *" ~ name ~ ")" ~ arguments ~ ";" }
+varargs = { "," ~ "..." }
+Callback = { "typedef" ~ return_type ~ pointer? ~ ("(F_CALLBACK *" | "(F_CALL *") ~ name ~ ")" ~ "(" ~ arguments ~ varargs?  ~ ")" ~  ";" }
 
 declaration = _{
     OpaqueType |
