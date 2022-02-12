@@ -26,7 +26,6 @@ FundamentalType = {
     "long" |
     "unsigned long long" |
     "unsigned long" |
-    "void*" |
     "void" |
     "float"
 }

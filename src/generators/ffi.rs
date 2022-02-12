@@ -1,7 +1,9 @@
 use crate::models::{
-    Callback, Constant, Enumeration, Error, Flags, Function, OpaqueType, Structure, Type, TypeAlias,
+    Argument, Callback, Constant, Enumeration, Error, Flags, Function, OpaqueType, Pointer,
+    Structure, Type, TypeAlias,
 };
 
+use crate::models::Type::FundamentalType;
 use quote::__private::{Ident, LexError, Literal, TokenStream};
 use quote::quote;
 use std::collections::HashMap;
@@ -76,7 +78,7 @@ pub fn generate_constant_code(constant: &Constant) -> Result<TokenStream, Error>
 
 pub fn map_type(c_type: &Type) -> Ident {
     let name = match c_type {
-        Type::FundamentalType(name) => match &name[..] {
+        FundamentalType(name) => match &name[..] {
             "char" => "c_char",
             "unsigned char" => "c_uchar",
             "signed char" => "c_char",
@@ -94,6 +96,42 @@ pub fn map_type(c_type: &Type) -> Ident {
         Type::UserType(name) => name,
     };
     format_ident!("{}", name)
+}
+
+pub fn map_type2(
+    c_type: &Type,
+    as_const: &Option<String>,
+    pointer: &Option<Pointer>,
+) -> TokenStream {
+    let name = match c_type {
+        FundamentalType(name) => match &name[..] {
+            "char" => "c_char",
+            "unsigned char" => "c_uchar",
+            "signed char" => "c_char",
+            "int" => "c_int",
+            "unsigned int" => "c_uint",
+            "short" => "c_short",
+            "unsigned short" => "c_ushort",
+            "long long" => "c_longlong",
+            "long" => "c_long",
+            "unsigned long long" => "c_ulonglong",
+            "unsigned long" => "c_ulong",
+            "float" => "c_float",
+            "void" => "c_void",
+            "void*" => "c_void",
+            _ => name,
+        },
+        Type::UserType(name) => name,
+    };
+    let name = format_ident!("{}", name);
+    match (as_const, pointer) {
+        (None, None) => quote! { #name },
+        (None, Some(Pointer::NormalPointer(_))) => quote! { *mut #name },
+        (None, Some(Pointer::DoublePointer(_))) => quote! { *mut *mut #name },
+        (Some(_), Some(Pointer::NormalPointer(_))) => quote! { *const #name },
+        (Some(_), Some(Pointer::DoublePointer(_))) => quote! { *const *const #name },
+        (Some(_), None) => quote! { #name },
+    }
 }
 
 pub fn generate_type_alias_code(type_alias: &TypeAlias) -> TokenStream {
@@ -132,6 +170,53 @@ pub fn generate_enumeration_code(enumeration: &Enumeration) -> Result<TokenStrea
     })
 }
 
+pub fn format_rust_ident(name: &String) -> Ident {
+    let keywords = &[
+        "as", "break", "const", "continue", "crate", "else", "enum", "extern", "false", "fn",
+        "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref",
+        "return", "self", "static", "struct", "super", "trait", "true", "type", "unsafe", "use",
+        "where", "while", "async", "await", "dyn", "try", "abstract", "become", "box", "do",
+        "final", "macro", "override", "priv", "typeof", "unsized", "virtual", "yield",
+    ];
+    if keywords.contains(&&*name.to_lowercase()) {
+        format_ident!("{}_", name)
+    } else {
+        format_ident!("{}", name)
+    }
+}
+
+pub fn generate_argument_code(argument: &Argument) -> TokenStream {
+    let name = format_rust_ident(&argument.name);
+    let argument_type = map_type2(
+        &argument.argument_type,
+        &argument.as_const,
+        &argument.pointer,
+    );
+    quote! {
+        #name: #argument_type
+    }
+}
+
+pub fn generate_callback_code(callback: &Callback) -> TokenStream {
+    let name = format_ident!("{}", callback.name);
+    let arguments: Vec<TokenStream> = callback
+        .arguments
+        .iter()
+        .map(generate_argument_code)
+        .collect();
+
+    if &callback.return_type == &FundamentalType("void".into()) && callback.pointer.is_none() {
+        quote! {
+            pub type #name = Option<unsafe extern "C" fn(#(#arguments),*)>;
+        }
+    } else {
+        let return_type = map_type2(&callback.return_type, &None, &callback.pointer);
+        quote! {
+            pub type #name = Option<unsafe extern "C" fn(#(#arguments),*) -> #return_type>;
+        }
+    }
+}
+
 pub fn generate_api_code(api: Api) -> Result<TokenStream, Error> {
     let opaque_types: Vec<TokenStream> = api
         .opaque_types
@@ -155,14 +240,18 @@ pub fn generate_api_code(api: Api) -> Result<TokenStream, Error> {
         enumerations.push(generate_enumeration_code(enumeration)?);
     }
 
+    let callbacks: Vec<TokenStream> = api.callbacks.iter().map(generate_callback_code).collect();
+
     Ok(quote! {
         #![allow(non_camel_case_types)]
-        use std::os::raw::{c_int, c_uint, c_ulonglong};
+        #![allow(non_snake_case)]
+        use std::os::raw::{c_char, c_float, c_int, c_uint, c_ulonglong, c_void};
 
         #(#opaque_types)*
         #(#type_aliases)*
         #(#constants)*
         #(#enumerations)*
+        #(#callbacks)*
     })
 }
 
@@ -174,13 +263,19 @@ pub fn generate_api(api: Api) -> Result<String, Error> {
 #[cfg(test)]
 mod tests {
     use crate::ffi::{generate_api, Api};
-    use crate::models::Type::FundamentalType;
-    use crate::models::{Constant, Enumeration, Enumerator, OpaqueType, TypeAlias};
+    use crate::models::Type::{FundamentalType, UserType};
+    use crate::models::{
+        Argument, Callback, Constant, Enumeration, Enumerator, OpaqueType, Pointer, TypeAlias,
+    };
     use quote::__private::TokenStream;
     use serde::de::Unexpected::Enum;
 
     fn format(code: TokenStream) -> String {
         rustfmt_wrapper::rustfmt(code).unwrap()
+    }
+
+    fn normal() -> Option<Pointer> {
+        Some(Pointer::NormalPointer("*".into()))
     }
 
     #[test]
@@ -192,7 +287,8 @@ mod tests {
         });
         let code = quote! {
             #![allow(non_camel_case_types)]
-            use std::os::raw::{c_int, c_uint, c_ulonglong};
+            #![allow(non_snake_case)]
+            use std::os::raw::{c_char, c_float, c_int, c_uint, c_ulonglong, c_void};
 
             pub const FMOD_MAX_CHANNEL_WIDTH: c_uint = 32;
         };
@@ -208,7 +304,8 @@ mod tests {
         });
         let code = quote! {
             #![allow(non_camel_case_types)]
-            use std::os::raw::{c_int, c_uint, c_ulonglong};
+            #![allow(non_snake_case)]
+            use std::os::raw::{c_char, c_float, c_int, c_uint, c_ulonglong, c_void};
 
             pub const FMOD_PORT_INDEX_NONE: c_ulonglong = 0xFFFFFFFFFFFFFFFF;
         };
@@ -224,7 +321,8 @@ mod tests {
         });
         let code = quote! {
             #![allow(non_camel_case_types)]
-            use std::os::raw::{c_int, c_uint, c_ulonglong};
+            #![allow(non_snake_case)]
+            use std::os::raw::{c_char, c_float, c_int, c_uint, c_ulonglong, c_void};
 
             pub const FMOD_VERSION: c_uint = 0x00020203;
         };
@@ -240,7 +338,8 @@ mod tests {
         });
         let code = quote! {
             #![allow(non_camel_case_types)]
-            use std::os::raw::{c_int, c_uint, c_ulonglong};
+            #![allow(non_snake_case)]
+            use std::os::raw::{c_char, c_float, c_int, c_uint, c_ulonglong, c_void};
 
             pub type FMOD_PORT_INDEX = c_ulonglong;
         };
@@ -255,7 +354,8 @@ mod tests {
         });
         let code = quote! {
             #![allow(non_camel_case_types)]
-            use std::os::raw::{c_int, c_uint, c_ulonglong};
+            #![allow(non_snake_case)]
+            use std::os::raw::{c_char, c_float, c_int, c_uint, c_ulonglong, c_void};
 
             #[repr(C)]
             #[derive(Debug, Copy, Clone)]
@@ -277,7 +377,8 @@ mod tests {
         });
         let code = quote! {
             #![allow(non_camel_case_types)]
-            use std::os::raw::{c_int, c_uint, c_ulonglong};
+            #![allow(non_snake_case)]
+            use std::os::raw::{c_char, c_float, c_int, c_uint, c_ulonglong, c_void};
 
             #[repr(C)]
             #[derive(Debug, Copy, Clone)]
@@ -316,7 +417,8 @@ mod tests {
         });
         let code = quote! {
             #![allow(non_camel_case_types)]
-            use std::os::raw::{c_int, c_uint, c_ulonglong};
+            #![allow(non_snake_case)]
+            use std::os::raw::{c_char, c_float, c_int, c_uint, c_ulonglong, c_void};
 
             pub type FMOD_CHANNELCONTROL_DSP_INDEX = c_int;
             pub const FMOD_CHANNELCONTROL_DSP_HEAD: FMOD_CHANNELCONTROL_DSP_INDEX = -1;
@@ -344,7 +446,8 @@ mod tests {
         });
         let code = quote! {
             #![allow(non_camel_case_types)]
-            use std::os::raw::{c_int, c_uint, c_ulonglong};
+            #![allow(non_snake_case)]
+            use std::os::raw::{c_char, c_float, c_int, c_uint, c_ulonglong, c_void};
 
             pub type FMOD_PLUGINTYPE = c_int;
             pub const FMOD_PLUGINTYPE_OUTPUT: FMOD_PLUGINTYPE = 0;
@@ -383,7 +486,8 @@ mod tests {
         });
         let code = quote! {
             #![allow(non_camel_case_types)]
-            use std::os::raw::{c_int, c_uint, c_ulonglong};
+            #![allow(non_snake_case)]
+            use std::os::raw::{c_char, c_float, c_int, c_uint, c_ulonglong, c_void};
 
             pub type FMOD_SPEAKER = c_int;
             pub const FMOD_SPEAKER_NONE: FMOD_SPEAKER = -1;
@@ -393,5 +497,66 @@ mod tests {
             pub const FMOD_SPEAKER_FORCEINT: FMOD_SPEAKER = 65536;
         };
         assert_eq!(generate_api(api), Ok(format(code)))
+    }
+
+    #[test]
+    fn test_should_generate_callback_with_no_return() {
+        let mut api = Api::default();
+        api.callbacks.push(Callback {
+            return_type: FundamentalType("void".into()),
+            pointer: None,
+            name: "FMOD_FILE_ASYNCDONE_FUNC".into(),
+            arguments: vec![Argument {
+                as_const: None,
+                argument_type: UserType("FMOD_ASYNCREADINFO".into()),
+                pointer: normal(),
+                name: "info".to_string(),
+            }],
+            varargs: None,
+        });
+        let code = quote! {
+            #![allow(non_camel_case_types)]
+            #![allow(non_snake_case)]
+            use std::os::raw::{c_char, c_float, c_int, c_uint, c_ulonglong, c_void};
+
+            pub type FMOD_FILE_ASYNCDONE_FUNC =
+                Option<unsafe extern "C" fn(info: *mut FMOD_ASYNCREADINFO)>;
+        };
+        assert_eq!(generate_api(api), Ok(format(code)));
+    }
+
+    #[test]
+    fn test_should_generate_callback_with_keyword_argument() {
+        let mut api = Api::default();
+        api.callbacks.push(Callback {
+            return_type: FundamentalType("void".into()),
+            pointer: normal(),
+            name: "FMOD_MEMORY_ALLOC_CALLBACK".into(),
+            arguments: vec![
+                Argument {
+                    as_const: None,
+                    argument_type: FundamentalType("unsigned int".into()),
+                    pointer: None,
+                    name: "size".to_string(),
+                },
+                Argument {
+                    as_const: None,
+                    argument_type: UserType("FMOD_MEMORY_TYPE".into()),
+                    pointer: None,
+                    name: "type".into(),
+                },
+            ],
+            varargs: None,
+        });
+        let code = quote! {
+            #![allow(non_camel_case_types)]
+            #![allow(non_snake_case)]
+            use std::os::raw::{c_char, c_float, c_int, c_uint, c_ulonglong, c_void};
+
+            pub type FMOD_MEMORY_ALLOC_CALLBACK =
+                Option<unsafe extern "C" fn(size: c_uint, type_: FMOD_MEMORY_TYPE) -> *mut c_void>;
+        };
+
+        assert_eq!(generate_api(api), Ok(format(code)));
     }
 }

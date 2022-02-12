@@ -365,6 +365,7 @@ mod tests {
                 structures: vec![],
                 callbacks: vec![Callback {
                     return_type: UserType("FMOD_RESULT".into()),
+                    pointer: None,
                     name: "FMOD_STUDIO_SYSTEM_CALLBACK".into(),
                     arguments: vec![Argument {
                         as_const: None,
@@ -393,6 +394,7 @@ mod tests {
                 structures: vec![],
                 callbacks: vec![Callback {
                     return_type: UserType("FMOD_RESULT".into()),
+                    pointer: None,
                     name: "FMOD_STUDIO_EVENT_CALLBACK".into(),
                     arguments: vec![
                         Argument {

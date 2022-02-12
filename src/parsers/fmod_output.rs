@@ -68,6 +68,7 @@ mod tests {
                 structures: vec![],
                 callbacks: vec![Callback {
                     return_type: FundamentalType("void".into()),
+                    pointer: None,
                     name: "FMOD_OUTPUT_LOG_FUNC".into(),
                     arguments: vec![Argument {
                         as_const: None,

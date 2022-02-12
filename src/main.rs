@@ -7,6 +7,7 @@ extern crate proc_macro;
 extern crate pest_derive;
 
 use crate::generators::ffi;
+use crate::models::OpaqueType;
 use crate::parsers::{
     fmod, fmod_common, fmod_dsp, fmod_dsp_effects, fmod_errors, fmod_output, fmod_studio,
     fmod_studio_common,
@@ -35,6 +36,7 @@ fn generate_lib_fmod(source: &str) {
     api.opaque_types.extend(header.opaque_types);
     api.constants.extend(header.constants);
     api.enumerations.extend(header.enumerations);
+    api.callbacks.extend(header.callbacks);
 
     let data = fs::read_to_string(source.join("api/core/inc/fmod.h")).expect("cannot read file");
     let header = fmod::parse(&data).unwrap();
@@ -46,12 +48,14 @@ fn generate_lib_fmod(source: &str) {
     api.type_aliases.extend(header.type_aliases);
     api.constants.extend(header.constants);
     api.enumerations.extend(header.enumerations);
+    api.callbacks.extend(header.callbacks);
 
     let data =
         fs::read_to_string(source.join("api/core/inc/fmod_output.h")).expect("cannot read file");
     let header = fmod_output::parse(&data).unwrap();
     api.opaque_types.extend(header.opaque_types);
     api.constants.extend(header.constants);
+    api.callbacks.extend(header.callbacks);
 
     let data =
         fs::read_to_string(source.join("api/core/inc/fmod_dsp.h")).expect("cannot read file");
@@ -59,6 +63,7 @@ fn generate_lib_fmod(source: &str) {
     api.opaque_types.extend(header.opaque_types);
     api.constants.extend(header.constants);
     api.enumerations.extend(header.enumerations);
+    api.callbacks.extend(header.callbacks);
 
     let data = fs::read_to_string(source.join("api/core/inc/fmod_dsp_effects.h"))
         .expect("cannot read file");
@@ -71,6 +76,11 @@ fn generate_lib_fmod(source: &str) {
     let header = fmod_errors::parse(&data).unwrap();
     println!("FMOD Errors");
     println!("Errors: {}", header.mapping.errors.len());
+
+    // post processing
+    api.opaque_types.push(OpaqueType {
+        name: "FMOD_STUDIO_SYSTEM".into(),
+    });
 
     let code = ffi::generate_api(api).unwrap();
     fs::write("./src/example.rs", code).unwrap();

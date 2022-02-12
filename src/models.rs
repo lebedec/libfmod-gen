@@ -103,6 +103,7 @@ pub struct Structure {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Callback {
     pub return_type: Type,
+    pub pointer: Option<Pointer>,
     pub name: String,
     pub arguments: Vec<Argument>,
     pub varargs: Option<String>,

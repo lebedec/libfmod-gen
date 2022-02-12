@@ -61,8 +61,12 @@ mod tests {
     use crate::models::Type::FundamentalType;
     use crate::models::{
         Argument, Callback, Constant, Enumeration, Enumerator, Field, Flag, Flags, OpaqueType,
-        Structure, TypeAlias,
+        Pointer, Structure, TypeAlias,
     };
+
+    fn normal() -> Option<Pointer> {
+        Some(Pointer::NormalPointer("*".into()))
+    }
 
     #[test]
     fn test_should_ignore_ifndef_directive() {
@@ -484,6 +488,7 @@ mod tests {
 
     #[test]
     fn test_should_parse_callback_with_void_pointer_return() {
+        // typedef void        (F_CALL *FMOD_MEMORY_FREE_CALLBACK)     (void *ptr, FMOD_MEMORY_TYPE type, const char *sourcestr);
         let source = r#"
             typedef void* (F_CALL *FMOD_MEMORY_ALLOC_CALLBACK) (unsigned int size);
         "#;
@@ -496,7 +501,8 @@ mod tests {
                 enumerations: vec![],
                 structures: vec![],
                 callbacks: vec![Callback {
-                    return_type: FundamentalType("void*".into()),
+                    return_type: FundamentalType("void".into()),
+                    pointer: normal(),
                     name: "FMOD_MEMORY_ALLOC_CALLBACK".into(),
                     arguments: vec![Argument {
                         as_const: None,
