@@ -1,6 +1,6 @@
 use crate::models::{
-    Argument, Callback, Constant, Enumeration, Error, Field, Flags, Function, OpaqueType, Pointer,
-    Preset, Structure, Type, TypeAlias,
+    Api, Argument, Callback, Constant, Enumeration, Error, ErrorStringMapping, Field, Flags,
+    Function, OpaqueType, Pointer, Preset, Structure, Type, TypeAlias,
 };
 
 use crate::models::Type::FundamentalType;
@@ -9,19 +9,6 @@ use quote::quote;
 use std::collections::HashMap;
 use std::num::{ParseFloatError, ParseIntError};
 use std::str::FromStr;
-
-#[derive(Debug, Default)]
-pub struct Api {
-    pub opaque_types: Vec<OpaqueType>,
-    pub constants: Vec<Constant>,
-    pub flags: Vec<Flags>,
-    pub enumerations: Vec<Enumeration>,
-    pub structures: Vec<Structure>,
-    pub callbacks: Vec<Callback>,
-    pub type_aliases: Vec<TypeAlias>,
-    pub functions: HashMap<String, Vec<Function>>,
-    pub presets: Vec<Preset>,
-}
 
 impl From<rustfmt_wrapper::Error> for Error {
     fn from(error: rustfmt_wrapper::Error) -> Self {
@@ -355,7 +342,26 @@ pub fn generate_preset_code(structure: &Structure, preset: &Preset) -> Result<To
     })
 }
 
-pub fn generate_api_code(api: Api) -> Result<TokenStream, Error> {
+pub fn generate_errors_mapping_code(mapping: &ErrorStringMapping) -> TokenStream {
+    let mut cases = vec![];
+    for error in &mapping.errors {
+        let result = format_ident!("{}", error.name);
+        let error = &error.string;
+        cases.push(quote! {
+            #result => #error,
+        });
+    }
+    quote! {
+        pub fn map_fmod_error(result: FMOD_RESULT) -> &'static str {
+            match result {
+                #(#cases)*
+                _ => "Unknown error code"
+            }
+        }
+    }
+}
+
+pub fn generate_ffi_code(api: &Api) -> Result<TokenStream, Error> {
     let opaque_types: Vec<TokenStream> = api
         .opaque_types
         .iter()
@@ -406,6 +412,12 @@ pub fn generate_api_code(api: Api) -> Result<TokenStream, Error> {
         }
     }
 
+    let errors = if api.errors.errors.is_empty() {
+        None
+    } else {
+        Some(generate_errors_mapping_code(&api.errors))
+    };
+
     Ok(quote! {
         #![allow(non_camel_case_types)]
         #![allow(non_snake_case)]
@@ -421,22 +433,23 @@ pub fn generate_api_code(api: Api) -> Result<TokenStream, Error> {
         #(#presets)*
         #(#callbacks)*
         #(#libraries)*
+        #errors
     })
 }
 
-pub fn generate_api(api: Api) -> Result<String, Error> {
-    let code = generate_api_code(api)?;
+pub fn generate(api: &Api) -> Result<String, Error> {
+    let code = generate_ffi_code(api)?;
     rustfmt_wrapper::rustfmt(code).map_err(Error::from)
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::ffi::{generate_api, Api};
+    use crate::ffi::{generate, Api};
     use crate::models::Pointer::DoublePointer;
     use crate::models::Type::{FundamentalType, UserType};
     use crate::models::{
-        Argument, Callback, Constant, Enumeration, Enumerator, Field, Flag, Flags, Function,
-        OpaqueType, Pointer, Preset, Structure, TypeAlias, Union,
+        Argument, Callback, Constant, Enumeration, Enumerator, ErrorString, ErrorStringMapping,
+        Field, Flag, Flags, Function, OpaqueType, Pointer, Preset, Structure, TypeAlias, Union,
     };
     use quote::__private::TokenStream;
 
@@ -463,7 +476,7 @@ mod tests {
 
             pub const FMOD_MAX_CHANNEL_WIDTH: c_uint = 32;
         };
-        assert_eq!(generate_api(api), Ok(format(code)))
+        assert_eq!(generate(&api), Ok(format(code)))
     }
 
     #[test]
@@ -481,7 +494,7 @@ mod tests {
 
             pub const FMOD_PORT_INDEX_NONE: c_ulonglong = 0xFFFFFFFFFFFFFFFF;
         };
-        assert_eq!(generate_api(api), Ok(format(code)))
+        assert_eq!(generate(&api), Ok(format(code)))
     }
 
     #[test]
@@ -499,7 +512,7 @@ mod tests {
 
             pub const FMOD_VERSION: c_uint = 0x00020203;
         };
-        assert_eq!(generate_api(api), Ok(format(code)))
+        assert_eq!(generate(&api), Ok(format(code)))
     }
 
     #[test]
@@ -517,7 +530,7 @@ mod tests {
 
             pub type FMOD_PORT_INDEX = c_ulonglong;
         };
-        assert_eq!(generate_api(api), Ok(format(code)))
+        assert_eq!(generate(&api), Ok(format(code)))
     }
 
     #[test]
@@ -538,7 +551,7 @@ mod tests {
                 _unused: [u8; 0]
             }
         };
-        assert_eq!(generate_api(api), Ok(format(code)))
+        assert_eq!(generate(&api), Ok(format(code)))
     }
 
     #[test]
@@ -568,7 +581,7 @@ mod tests {
                 _unused: [u8; 0]
             }
         };
-        assert_eq!(generate_api(api), Ok(format(code)))
+        assert_eq!(generate(&api), Ok(format(code)))
     }
 
     #[test]
@@ -602,7 +615,7 @@ mod tests {
             pub const FMOD_CHANNELCONTROL_DSP_FADER: FMOD_CHANNELCONTROL_DSP_INDEX = -2;
             pub const FMOD_CHANNELCONTROL_DSP_FORCEINT: FMOD_CHANNELCONTROL_DSP_INDEX = 65536;
         };
-        assert_eq!(generate_api(api), Ok(format(code)))
+        assert_eq!(generate(&api), Ok(format(code)))
     }
 
     #[test]
@@ -631,7 +644,7 @@ mod tests {
             pub const FMOD_PLUGINTYPE_OUTPUT: FMOD_PLUGINTYPE = 0;
             pub const FMOD_PLUGINTYPE_CODEC: FMOD_PLUGINTYPE = 1;
         };
-        assert_eq!(generate_api(api), Ok(format(code)))
+        assert_eq!(generate(&api), Ok(format(code)))
     }
 
     #[test]
@@ -675,7 +688,7 @@ mod tests {
             pub const FMOD_SPEAKER_FRONT_CENTER: FMOD_SPEAKER = 2;
             pub const FMOD_SPEAKER_FORCEINT: FMOD_SPEAKER = 65536;
         };
-        assert_eq!(generate_api(api), Ok(format(code)))
+        assert_eq!(generate(&api), Ok(format(code)))
     }
 
     #[test]
@@ -702,7 +715,7 @@ mod tests {
             pub type FMOD_FILE_ASYNCDONE_FUNC =
                 Option<unsafe extern "C" fn(info: *mut FMOD_ASYNCREADINFO)>;
         };
-        assert_eq!(generate_api(api), Ok(format(code)));
+        assert_eq!(generate(&api), Ok(format(code)));
     }
 
     #[test]
@@ -729,7 +742,7 @@ mod tests {
             pub type FMOD_DSP_LOG_FUNC =
                 Option<unsafe extern "C" fn(level: FMOD_DEBUG_FLAGS, ...)>;
         };
-        assert_eq!(generate_api(api), Ok(format(code)));
+        assert_eq!(generate(&api), Ok(format(code)));
     }
 
     #[test]
@@ -765,7 +778,7 @@ mod tests {
                 Option<unsafe extern "C" fn(size: c_uint, type_: FMOD_MEMORY_TYPE) -> *mut c_void>;
         };
 
-        assert_eq!(generate_api(api), Ok(format(code)));
+        assert_eq!(generate(&api), Ok(format(code)));
     }
 
     #[test]
@@ -795,7 +808,7 @@ mod tests {
             pub const FMOD_DEBUG_LEVEL_NONE: FMOD_DEBUG_FLAGS = 0x00000000;
             pub const FMOD_DEBUG_LEVEL_ERROR: FMOD_DEBUG_FLAGS = 0x00000001;
         };
-        assert_eq!(generate_api(api), Ok(format(code)));
+        assert_eq!(generate(&api), Ok(format(code)));
     }
 
     #[test]
@@ -835,7 +848,7 @@ mod tests {
             pub const FMOD_CHANNELMASK_MONO: FMOD_CHANNELMASK = (FMOD_CHANNELMASK_FRONT_LEFT);
             pub const FMOD_CHANNELMASK_STEREO: FMOD_CHANNELMASK = (FMOD_CHANNELMASK_FRONT_LEFT | FMOD_CHANNELMASK_FRONT_RIGHT);
         };
-        assert_eq!(generate_api(api), Ok(format(code)));
+        assert_eq!(generate(&api), Ok(format(code)));
     }
 
     #[test]
@@ -865,7 +878,7 @@ mod tests {
             pub const FMOD_THREAD_PRIORITY_PLATFORM_MIN: FMOD_THREAD_PRIORITY = (-32 * 1024);
             pub const FMOD_THREAD_PRIORITY_PLATFORM_MAX: FMOD_THREAD_PRIORITY = ( 32 * 1024);
         };
-        assert_eq!(generate_api(api), Ok(format(code)));
+        assert_eq!(generate(&api), Ok(format(code)));
     }
 
     #[test]
@@ -912,7 +925,7 @@ mod tests {
                 pub z: c_float
             }
         };
-        assert_eq!(generate_api(api), Ok(format(code)));
+        assert_eq!(generate(&api), Ok(format(code)));
     }
 
     #[test]
@@ -967,7 +980,7 @@ mod tests {
                 pub Data4: [c_uchar; 8 as usize],
             }
         };
-        assert_eq!(generate_api(api), Ok(format(code)));
+        assert_eq!(generate(&api), Ok(format(code)));
     }
 
     #[test]
@@ -996,7 +1009,7 @@ mod tests {
                 pub loudnesshistogram: [c_float; FMOD_DSP_LOUDNESS_METER_HISTOGRAM_SAMPLES as usize],
             }
         };
-        assert_eq!(generate_api(api), Ok(format(code)));
+        assert_eq!(generate(&api), Ok(format(code)));
     }
 
     #[test]
@@ -1025,7 +1038,7 @@ mod tests {
                 pub valuenames: *const *const c_char,
             }
         };
-        assert_eq!(generate_api(api), Ok(format(code)));
+        assert_eq!(generate(&api), Ok(format(code)));
     }
 
     #[test]
@@ -1078,7 +1091,7 @@ mod tests {
                 pub intdesc: FMOD_DSP_PARAMETER_DESC_INT,
             }
         };
-        assert_eq!(generate_api(api), Ok(format(code)));
+        assert_eq!(generate(&api), Ok(format(code)));
     }
 
     #[test]
@@ -1126,13 +1139,13 @@ mod tests {
                 EarlyDelay: -8.0,
             };
         };
-        assert_eq!(generate_api(api), Ok(format(code)));
+        assert_eq!(generate(&api), Ok(format(code)));
     }
 
     #[test]
     fn test_should_generate_function() {
         let mut api = Api::default();
-        api.functions.insert(
+        api.functions.push((
             "fmod".into(),
             vec![Function {
                 return_type: UserType("FMOD_RESULT".into()),
@@ -1152,7 +1165,7 @@ mod tests {
                     },
                 ],
             }],
-        );
+        ));
         let code = quote! {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
@@ -1167,6 +1180,44 @@ mod tests {
                 ) -> FMOD_RESULT;
             }
         };
-        assert_eq!(generate_api(api), Ok(format(code)));
+        assert_eq!(generate(&api), Ok(format(code)));
+    }
+
+    #[test]
+    fn test_should_generate_error_mapping() {
+        /*
+
+        case FMOD_OK:                            return "No errors.";
+        case FMOD_ERR_BADCOMMAND:                return "Tried to call a function on a data type that does not allow this type of functionality (ie calling Sound::lock on a streaming sound).";
+        case FMOD_ERR_CHANNEL_ALLOC:             return "Error trying to allocate a channel.";
+         */
+        let mut api = Api::default();
+        api.errors = ErrorStringMapping {
+            errors: vec![
+                ErrorString {
+                    name: "FMOD_OK".into(),
+                    string: "No errors.".into(),
+                },
+                ErrorString {
+                    name: "FMOD_ERR_CHANNEL_ALLOC".into(),
+                    string: "Error trying to allocate a channel.".into(),
+                },
+            ],
+        };
+        let code = quote! {
+            #![allow(non_camel_case_types)]
+            #![allow(non_snake_case)]
+            #![allow(unused_parens)]
+            use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
+
+            pub fn map_fmod_error(result: FMOD_RESULT) -> &'static str {
+                match result {
+                    FMOD_OK => "No errors.",
+                    FMOD_ERR_CHANNEL_ALLOC => "Error trying to allocate a channel.",
+                    _ => "Unknown error code"
+                }
+            }
+        };
+        assert_eq!(generate(&api), Ok(format(code)));
     }
 }

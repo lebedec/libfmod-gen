@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Debug, PartialEq)]
 pub enum Error {
@@ -9,12 +10,18 @@ pub enum Error {
     ParseInt(String),
     ParseFloat(String),
     LexError(String),
-    StructureNotFound,
+    Io(String),
 }
 
 impl From<serde_json::Error> for Error {
     fn from(error: serde_json::Error) -> Self {
         Self::Serde(error.to_string())
+    }
+}
+
+impl From<std::io::Error> for Error {
+    fn from(error: std::io::Error) -> Self {
+        Self::Io(error.to_string())
     }
 }
 
@@ -132,4 +139,18 @@ pub struct ErrorStringMapping {
 pub struct Preset {
     pub name: String,
     pub values: Vec<String>,
+}
+
+#[derive(Debug, Default)]
+pub struct Api {
+    pub opaque_types: Vec<OpaqueType>,
+    pub constants: Vec<Constant>,
+    pub flags: Vec<Flags>,
+    pub enumerations: Vec<Enumeration>,
+    pub structures: Vec<Structure>,
+    pub callbacks: Vec<Callback>,
+    pub type_aliases: Vec<TypeAlias>,
+    pub functions: Vec<(String, Vec<Function>)>,
+    pub presets: Vec<Preset>,
+    pub errors: ErrorStringMapping,
 }
