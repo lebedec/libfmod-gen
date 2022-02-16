@@ -5,6 +5,8 @@ use convert_case::{Case, Casing};
 use quote::__private::{Ident, TokenStream};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use crate::generators::dictionary::RENAMES;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Struct {
     pub structure: Structure,
@@ -45,12 +47,18 @@ fn format_enumerator_ident(enumeration: &str, name: &str) -> Ident {
         p += 1;
     }
     let key = (&name[p..]).to_case(Case::UpperCamel);
+
     let key = if key.chars().nth(0).unwrap_or('a').is_ascii_digit() {
         format!("_{}", key)
     } else {
         key
     };
-    format_ident!("{}", key)
+    let name = key;
+    let name = match RENAMES.get(&name[..]) {
+        None => name,
+        Some(rename) => rename.to_string(),
+    };
+    format_ident!("{}", name)
 }
 
 fn extract_method_name(name: &str) -> String {
@@ -61,22 +69,11 @@ fn extract_method_name(name: &str) -> String {
 }
 
 fn format_struct_ident(key: &str) -> Ident {
-    let renames: HashMap<&str, &str> = HashMap::from([
-        ("Channelgroup", "ChannelGroup"),
-        ("Dspconnection", "DspConnection"),
-        ("Reverb3D", "Reverb3d"),
-        ("Soundgroup", "SoundGroup"),
-        ("Commandreplay", "CommandReplay"),
-        ("Eventdescription", "EventDescription"),
-        ("Eventinstance", "EventInstance"),
-        ("Studiosystem", "Studio"),
-    ]);
-
     let key = key.replace("FMOD_", "");
     let key = key.replace("STUDIO_SYSTEM", "STUDIOSYSTEM");
     let key = key.replace("STUDIO_", "");
     let name = key.to_case(Case::Pascal);
-    let name = match renames.get(&name[..]) {
+    let name = match RENAMES.get(&name[..]) {
         None => name,
         Some(rename) => rename.to_string(),
     };
@@ -205,7 +202,6 @@ pub fn generate_argument_map_code(argument: &Argument) -> TokenStream {
 }
 
 pub fn generate_enumeration_code(enumeration: &Enumeration) -> TokenStream {
-    let enumeration_name = enumeration.name.clone();
     let name = format_struct_ident(&enumeration.name);
 
     let mut keys = vec![];
@@ -220,13 +216,15 @@ pub fn generate_enumeration_code(enumeration: &Enumeration) -> TokenStream {
         let key = format_enumerator_ident(&enumeration.name, &enumerator.name);
         let enumerator = format_ident!("{}", enumerator.name);
         input_map.push(quote! {#name::#key => ffi::#enumerator});
-        output_map.push(quote! {ffi::#enumerator => #name::#key});
+        output_map.push(quote! {ffi::#enumerator => Ok(#name::#key)});
         keys.push(key);
     }
 
-    let enumeration = format_ident!("{}", &enumeration.name);
+    let enumeration_name = &enumeration.name;
+    let enumeration = format_ident!("{}", enumeration_name);
 
     quote! {
+        #[derive(Debug, Clone, Copy, PartialEq)]
         pub enum #name {
             #(#keys),*
         }
@@ -238,16 +236,15 @@ pub fn generate_enumeration_code(enumeration: &Enumeration) -> TokenStream {
                 }
             }
         }
-        /*
-        impl From<ffi::#enumeration> for Result<#name, Error> {
+
+        impl #name {
             pub fn from(value: ffi::#enumeration) -> Result<#name, Error> {
-                let value = match value {
-                    #(#output_map),* ,
-                    _ => return Err(Error::EnumBindgen(#enumeration_name, value))
+                match value {
+                    #(#output_map),*,
+                    _ => Err(err_enum!(#enumeration_name, value)),
                 }
-                Ok(value)
             }
-        }*/
+        }
     }
 }
 
@@ -287,7 +284,7 @@ pub fn generate_method_code(owner: &str, function: &Function) -> TokenStream {
                 if result == FMOD_OK {
                     Ok(output.into())
                 } else {
-                    Err(err!(#function_name, result))
+                    Err(err_fmod!(#function_name, result))
                 }
             }
         },
@@ -299,7 +296,7 @@ pub fn generate_method_code(owner: &str, function: &Function) -> TokenStream {
                 if result == FMOD_OK {
                     Ok(())
                 } else {
-                    Err(err!(#function_name, result))
+                    Err(err_fmod!(#function_name, result))
                 }
             }
         },
@@ -331,7 +328,7 @@ pub fn generate_struct_code(key: &String, methods: &Vec<&Function>) -> TokenStre
                     if result == ffi::FMOD_OK {
                         Ok(Self { pointer })
                     } else {
-                        Err(err!(#function_name, result))
+                        Err(err_fmod!(#function_name, result))
                     }
                 }
             })
@@ -394,19 +391,33 @@ pub fn generate_lib_code(api: &Api) -> Result<TokenStream, Error> {
         pub mod ffi;
 
         #[derive(Debug)]
-        pub struct Error {
-            pub function: String,
-            pub code: i32,
-            pub message: String
+        pub enum Error {
+            Fmod {
+                function: String,
+                code: i32,
+                message: String,
+            },
+            EnumBindgen {
+                enumeration: String,
+                value: String
+            }
         }
 
-
-        macro_rules! err {
-            ($function:expr, $code:expr) => {
-                Error {
+        macro_rules! err_fmod {
+            ($ function : expr , $ code : expr) => {
+                Error::Fmod {
                     function: $function.to_string(),
                     code: $code,
-                    message: ffi::map_fmod_error($code).to_string()
+                    message: ffi::map_fmod_error($code).to_string(),
+                }
+            };
+        }
+
+        macro_rules! err_enum {
+            ($ enumeration : expr , $ value : expr) => {
+                Error::EnumBindgen {
+                    enumeration: $enumeration.to_string(),
+                    value: $value.to_string(),
                 }
             };
         }
@@ -467,7 +478,7 @@ mod tests {
                 if result == FMOD_OK {
                     Ok(())
                 } else {
-                    Err(err!("FMOD_System_SetDSPBufferSize", result))
+                    Err(err_fmod!("FMOD_System_SetDSPBufferSize", result))
                 }
             }
         }.to_string();
@@ -495,16 +506,27 @@ mod tests {
         };
         let actual = generate_enumeration_code(&enumeration).to_string();
         let expected = quote! {
-            pub enum Outputtype {
+            #[derive(Debug, Clone, Copy, PartialEq)]
+            pub enum OutputType {
                 Autodetect,
                 Unknown
             }
 
-            impl From<Outputtype> for ffi::FMOD_OUTPUTTYPE {
-                fn from(value: Outputtype) -> ffi::FMOD_OUTPUTTYPE {
+            impl From<OutputType> for ffi::FMOD_OUTPUTTYPE {
+                fn from(value: OutputType) -> ffi::FMOD_OUTPUTTYPE {
                     match value {
-                        Outputtype::Autodetect => ffi::FMOD_OUTPUTTYPE_AUTODETECT,
-                        Outputtype::Unknown => ffi::FMOD_OUTPUTTYPE_UNKNOWN
+                        OutputType::Autodetect => ffi::FMOD_OUTPUTTYPE_AUTODETECT,
+                        OutputType::Unknown => ffi::FMOD_OUTPUTTYPE_UNKNOWN
+                    }
+                }
+            }
+
+            impl OutputType {
+                pub fn from(value: ffi::FMOD_OUTPUTTYPE) -> Result<OutputType, Error> {
+                    match value {
+                        ffi::FMOD_OUTPUTTYPE_AUTODETECT => Ok(OutputType::Autodetect),
+                        ffi::FMOD_OUTPUTTYPE_UNKNOWN => Ok(OutputType::Unknown),
+                        _ => Err(err_enum!("FMOD_OUTPUTTYPE" , value)),
                     }
                 }
             }
@@ -530,16 +552,27 @@ mod tests {
         };
         let actual = generate_enumeration_code(&enumeration).to_string();
         let expected = quote! {
-            pub enum Speakermode {
+            #[derive(Debug, Clone, Copy, PartialEq)]
+            pub enum SpeakerMode {
                 Default,
                 _5Point1
             }
 
-            impl From<Speakermode> for ffi::FMOD_SPEAKERMODE {
-                fn from(value: Speakermode) -> ffi::FMOD_SPEAKERMODE {
+            impl From<SpeakerMode> for ffi::FMOD_SPEAKERMODE {
+                fn from(value: SpeakerMode) -> ffi::FMOD_SPEAKERMODE {
                     match value {
-                        Speakermode::Default => ffi::FMOD_SPEAKERMODE_DEFAULT,
-                        Speakermode::_5Point1 => ffi::FMOD_SPEAKERMODE_5POINT1
+                        SpeakerMode::Default => ffi::FMOD_SPEAKERMODE_DEFAULT,
+                        SpeakerMode::_5Point1 => ffi::FMOD_SPEAKERMODE_5POINT1
+                    }
+                }
+            }
+
+            impl SpeakerMode {
+                pub fn from(value: ffi::FMOD_SPEAKERMODE) -> Result<SpeakerMode, Error> {
+                    match value {
+                        ffi::FMOD_SPEAKERMODE_DEFAULT => Ok(SpeakerMode::Default),
+                        ffi::FMOD_SPEAKERMODE_5POINT1 => Ok(SpeakerMode::_5Point1),
+                        _ => Err(err_enum!("FMOD_SPEAKERMODE" , value)),
                     }
                 }
             }
@@ -565,6 +598,7 @@ mod tests {
         };
         let actual = generate_enumeration_code(&enumeration).to_string();
         let expected = quote! {
+            #[derive(Debug, Clone, Copy, PartialEq)]
             pub enum ParameterType {
                 GameControlled,
                 AutomaticDistance
@@ -575,6 +609,16 @@ mod tests {
                     match value {
                         ParameterType::GameControlled => ffi::FMOD_STUDIO_PARAMETER_GAME_CONTROLLED,
                         ParameterType::AutomaticDistance => ffi::FMOD_STUDIO_PARAMETER_AUTOMATIC_DISTANCE
+                    }
+                }
+            }
+
+            impl ParameterType {
+                pub fn from(value: ffi::FMOD_STUDIO_PARAMETER_TYPE) -> Result<ParameterType, Error> {
+                    match value {
+                        ffi::FMOD_STUDIO_PARAMETER_GAME_CONTROLLED => Ok(ParameterType::GameControlled),
+                        ffi::FMOD_STUDIO_PARAMETER_AUTOMATIC_DISTANCE => Ok(ParameterType::AutomaticDistance),
+                        _ => Err(err_enum!("FMOD_STUDIO_PARAMETER_TYPE" , value)),
                     }
                 }
             }
@@ -600,6 +644,7 @@ mod tests {
         };
         let actual = generate_enumeration_code(&enumeration).to_string();
         let expected = quote! {
+            #[derive(Debug, Clone, Copy, PartialEq)]
             pub enum LoadMemoryMode {
                 Memory,
                 MemoryPoint
@@ -610,6 +655,16 @@ mod tests {
                     match value {
                         LoadMemoryMode::Memory => ffi::FMOD_STUDIO_LOAD_MEMORY,
                         LoadMemoryMode::MemoryPoint => ffi::FMOD_STUDIO_LOAD_MEMORY_POINT
+                    }
+                }
+            }
+
+            impl LoadMemoryMode {
+                pub fn from(value: ffi::FMOD_STUDIO_LOAD_MEMORY_MODE) -> Result<LoadMemoryMode, Error> {
+                    match value {
+                        ffi::FMOD_STUDIO_LOAD_MEMORY => Ok(LoadMemoryMode::Memory),
+                        ffi::FMOD_STUDIO_LOAD_MEMORY_POINT => Ok(LoadMemoryMode::MemoryPoint),
+                        _ => Err(err_enum!("FMOD_STUDIO_LOAD_MEMORY_MODE" , value)),
                     }
                 }
             }

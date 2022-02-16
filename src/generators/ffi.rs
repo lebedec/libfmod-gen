@@ -6,7 +6,6 @@ use crate::models::{
 use crate::models::Type::FundamentalType;
 use quote::__private::{Ident, LexError, Literal, TokenStream};
 use quote::quote;
-use std::collections::HashMap;
 use std::num::{ParseFloatError, ParseIntError};
 use std::str::FromStr;
 
