@@ -133,6 +133,28 @@ lazy_static! {
             ("Transmitspeakermode", "TransmitSpeakerMode"),
             ("DspObjectpan", "DspObjectPan"),
             ("Outputgain", "OutputGain"),
+            ("3DAttributes", "Attributes3d"),
+            ("Pluginlist", "PluginList"),
+            ("Fmodresult", "FmodResult"),
+            ("Studioadvancedsettings", "StudioAdvancedSettings"),
+            ("Studiocpuusage", "StudioCpuUsage"),
+            ("Asyncreadinfo", "AsyncReadInfo"),
+            ("Advancedsettings", "AdvancedSettings"),
+            ("Createsoundexinfo", "CreateSoundexInfo"),
+            ("ErrorcallbackInfo", "ErrorCallbackInfo"),
+            ("DspParameter3Dattributes", "DspParameterAttributes3d"),
+            (
+                "DspParameter3DattributesMulti",
+                "DspParameterAttributes3dMulti",
+            ),
         ])
     };
 }
+
+pub const KEYWORDS: &[&str] = &[
+    "as", "break", "const", "continue", "crate", "else", "enum", "extern", "false", "fn", "for",
+    "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref", "return",
+    "self", "static", "struct", "super", "trait", "true", "type", "unsafe", "use", "where",
+    "while", "async", "await", "dyn", "try", "abstract", "become", "box", "do", "final", "macro",
+    "override", "priv", "typeof", "unsized", "virtual", "yield",
+];

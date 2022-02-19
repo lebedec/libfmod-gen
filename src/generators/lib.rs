@@ -1,11 +1,13 @@
+use crate::ffi;
 use crate::models::Pointer::DoublePointer;
 use crate::models::Type::{FundamentalType, UserType};
-use crate::models::{Api, Argument, Enumeration, Error, Function, Pointer, Structure, Type};
+use crate::models::{Api, Argument, Enumeration, Error, Field, Function, Pointer, Structure, Type};
 use convert_case::{Case, Casing};
 use quote::__private::{Ident, TokenStream};
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::str::FromStr;
 
-use crate::generators::dictionary::RENAMES;
+use crate::generators::dictionary::{KEYWORDS, RENAMES};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Struct {
@@ -69,8 +71,11 @@ fn extract_method_name(name: &str) -> String {
 }
 
 fn format_struct_ident(key: &str) -> Ident {
+    let key = key.replace("FMOD_RESULT", "FMOD_FMODRESULT");
     let key = key.replace("FMOD_", "");
     let key = key.replace("STUDIO_SYSTEM", "STUDIOSYSTEM");
+    let key = key.replace("STUDIO_ADVANCEDSETTINGS", "STUDIOADVANCEDSETTINGS");
+    let key = key.replace("STUDIO_CPU_USAGE", "STUDIOCPUUSAGE");
     let key = key.replace("STUDIO_", "");
     let name = key.to_case(Case::Pascal);
     let name = match RENAMES.get(&name[..]) {
@@ -79,14 +84,6 @@ fn format_struct_ident(key: &str) -> Ident {
     };
     format_ident!("{}", name)
 }
-
-const KEYWORDS: &[&str] = &[
-    "as", "break", "const", "continue", "crate", "else", "enum", "extern", "false", "fn", "for",
-    "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref", "return",
-    "self", "static", "struct", "super", "trait", "true", "type", "unsafe", "use", "where",
-    "while", "async", "await", "dyn", "try", "abstract", "become", "box", "do", "final", "macro",
-    "override", "priv", "typeof", "unsized", "virtual", "yield",
-];
 
 pub fn format_argument_ident(name: &str) -> Ident {
     let name = name.to_case(Case::Snake);
@@ -139,39 +136,90 @@ pub fn is_double(pointer: &Option<Pointer>) -> bool {
     }
 }
 
+pub fn describe_ffi_pointer<'a>(
+    as_const: &'a Option<String>,
+    pointer: &'a Option<Pointer>,
+) -> &'a str {
+    let description = match (as_const, pointer) {
+        (None, None) => "",
+        (None, Some(Pointer::NormalPointer(_))) => "*mut",
+        (None, Some(Pointer::DoublePointer(_))) => "*mut *mut",
+        (Some(_), Some(Pointer::NormalPointer(_))) => "*const",
+        (Some(_), Some(Pointer::DoublePointer(_))) => "*const *const",
+        (Some(_), None) => "",
+    };
+    description
+}
+
 pub fn format_rust_type(
     c_type: &Type,
     as_const: &Option<String>,
     pointer: &Option<Pointer>,
     as_array: &Option<TokenStream>,
+    api: &Api,
 ) -> TokenStream {
-    let name = match c_type {
-        FundamentalType(name) => match &name[..] {
-            "char" => "c_char",
-            "unsigned char" => "c_uchar",
-            "signed char" => "c_char",
-            "int" => "i32",
-            "unsigned int" => "u32",
-            "short" => "c_short",
-            "unsigned short" => "c_ushort",
-            "long long" => "c_longlong",
-            "long" => "c_long",
-            "unsigned long long" => "c_ulonglong",
-            "unsigned long" => "c_ulong",
-            "float" => "c_float",
-            "void" => "c_void",
-            _ => name,
+    let ptr = describe_ffi_pointer(as_const, pointer);
+    let tokens = match c_type {
+        FundamentalType(name) => match (ptr, &name[..]) {
+            ("*const", "char") => quote! { String },
+            ("*const *const", "char") => quote! { Vec<String> },
+            ("*mut", "char") => quote! { String },
+            ("*mut", "void") => quote! { *mut c_void },
+            ("*mut", "int") => quote! { Vec<i32> },
+            ("*mut", "float") => quote! { Vec<f32> },
+            ("*mut *mut", "float") => quote! { Vec<f32> },
+            ("*mut *mut", "char") => quote! { Vec<String> },
+            ("", "unsigned char") => quote! { u8 },
+            ("", "char") => quote! { i8 },
+            ("", "int") => quote! { i32 },
+            ("", "unsigned int") => quote! { u32 },
+            ("", "short") => quote! { i16 },
+            ("", "unsigned short") => quote! { u16 },
+            ("", "long long") => quote! { i64 },
+            ("", "long") => quote! { i64 },
+            ("", "unsigned long long") => quote! { u64 },
+            ("", "unsigned long") => quote! { u64 },
+            ("", "float") => quote! { f32 },
+            _ => {
+                let name = format_ident!("{}", name);
+                quote! { Box<#name> }
+            }
         },
-        Type::UserType(name) => name,
-    };
-    let name = format_ident!("{}", name);
-    let tokens = match (as_const, pointer) {
-        (None, None) => quote! { #name },
-        (None, Some(Pointer::NormalPointer(_))) => quote! { *mut #name },
-        (None, Some(Pointer::DoublePointer(_))) => quote! { *mut *mut #name },
-        (Some(_), Some(Pointer::NormalPointer(_))) => quote! { *const #name },
-        (Some(_), Some(Pointer::DoublePointer(_))) => quote! { *const *const #name },
-        (Some(_), None) => quote! { #name },
+        UserType(name) => match (ptr, api.describe_user_type(name)) {
+            ("*mut", UserTypeDesc::OpaqueType) => {
+                let name = format_struct_ident(name);
+                quote! { #name }
+            }
+            ("*mut", UserTypeDesc::Structure) => {
+                let name = format_struct_ident(name);
+                quote! { #name }
+            }
+            ("*mut *mut", UserTypeDesc::Structure) => {
+                let name = format_ident!("{}", name);
+                quote! { Vec<ffi::#name> }
+            }
+            ("*mut", UserTypeDesc::Flags) => {
+                let name = format_ident!("{}", name);
+                quote! { Vec<ffi::#name> }
+            }
+            ("*mut", UserTypeDesc::Enumeration) => {
+                let name = format_struct_ident(name);
+                quote! { Vec<#name> }
+            }
+            ("", UserTypeDesc::Structure) => {
+                let name = format_struct_ident(name);
+                quote! { #name }
+            }
+            ("", UserTypeDesc::Enumeration) => {
+                let name = format_struct_ident(name);
+                quote! { #name }
+            }
+            ("", _) => {
+                let name = format_ident!("{}", name);
+                quote! { ffi::#name }
+            }
+            _ => quote! { err },
+        },
     };
     match as_array {
         None => tokens,
@@ -183,13 +231,14 @@ pub fn format_rust_type(
     }
 }
 
-pub fn generate_argument_code(argument: &Argument) -> TokenStream {
+pub fn generate_argument_code(argument: &Argument, api: &Api) -> TokenStream {
     let name = format_argument_ident(&argument.name);
     let argument_type = format_rust_type(
         &argument.argument_type,
         &argument.as_const,
         &argument.pointer,
         &None,
+        &api,
     );
     quote! {
         #name: #argument_type
@@ -248,7 +297,255 @@ pub fn generate_enumeration_code(enumeration: &Enumeration) -> TokenStream {
     }
 }
 
-pub fn generate_method_code(owner: &str, function: &Function) -> TokenStream {
+pub fn generate_field_code(field: &Field, api: &Api) -> Result<TokenStream, Error> {
+    let name = format_argument_ident(&field.name);
+    let as_array = match &field.as_array {
+        None => None,
+        Some(dimension) => {
+            let token = &dimension[1..dimension.len() - 1];
+            let dimension = match api.describe_user_type(token) {
+                UserTypeDesc::Constant => {
+                    let name = format_ident!("{}", token);
+                    quote! { ffi::#name }
+                }
+                _ => TokenStream::from_str(token)?,
+            };
+            Some(dimension)
+        }
+    };
+    let field_type = format_rust_type(
+        &field.field_type,
+        &field.as_const,
+        &field.pointer,
+        &as_array,
+        &api,
+    );
+    Ok(quote! {
+        pub #name: #field_type
+    })
+}
+
+pub fn generate_field_from_code(
+    structure: &str,
+    field: &Field,
+    api: &Api,
+) -> Result<TokenStream, Error> {
+    let name = format_argument_ident(&field.name);
+    let value_name = ffi::format_rust_ident(&field.name);
+    let ptr = describe_ffi_pointer(&field.as_const, &field.pointer);
+
+    let getter = match (structure, &field.name[..]) {
+        ("FMOD_DSP_PARAMETER_3DATTRIBUTES_MULTI", "relative") => {
+            quote! { attr3d_array8(value.relative.map(Attributes3d::from).into_iter().collect::<Result<Vec<Attributes3d>, Error>>()?) }
+        }
+        ("FMOD_CREATESOUNDEXINFO", "inclusionlist") => {
+            quote! { to_vec!(value.inclusionlist, value.inclusionlistnum) }
+        }
+        ("FMOD_ADVANCEDSETTINGS", "ASIOChannelList") => {
+            quote! { to_vec!(value.ASIOChannelList, value.ASIONumChannels, |ptr| to_string!(ptr))? }
+        }
+        ("FMOD_ADVANCEDSETTINGS", "ASIOSpeakerList") => {
+            quote! { to_vec!(value.ASIOSpeakerList, value.ASIONumChannels, Speaker::from)? }
+        }
+        ("FMOD_OUTPUT_OBJECT3DINFO", "buffer") => {
+            quote! { to_vec!(value.buffer, value.bufferlength) }
+        }
+        ("FMOD_DSP_BUFFER_ARRAY", "buffernumchannels") => {
+            quote! { to_vec!(value.buffernumchannels, value.numbuffers) }
+        }
+        ("FMOD_DSP_BUFFER_ARRAY", "bufferchannelmask") => {
+            quote! { to_vec!(value.bufferchannelmask, value.numbuffers) }
+        }
+        ("FMOD_DSP_BUFFER_ARRAY", "buffers") => {
+            quote! { to_vec!(value.buffers, value.numbuffers, |ptr| Ok(*ptr))? }
+        }
+        ("FMOD_DSP_PARAMETER_FLOAT_MAPPING_PIECEWISE_LINEAR", "pointparamvalues") => {
+            quote! { to_vec!(value.pointparamvalues, value.numpoints) }
+        }
+        ("FMOD_DSP_PARAMETER_FLOAT_MAPPING_PIECEWISE_LINEAR", "pointpositions") => {
+            quote! { to_vec!(value.pointpositions, value.numpoints) }
+        }
+        ("FMOD_DSP_PARAMETER_DESC_INT", "valuenames") => {
+            quote! { vec![] } // TODO
+        }
+        ("FMOD_DSP_PARAMETER_DESC_BOOL", "valuenames") => {
+            quote! { vec![] } // TODO
+        }
+        ("FMOD_DSP_PARAMETER_FFT", "spectrum") => {
+            quote! { value.spectrum.map(|ptr| to_vec!(ptr, value.numchannels)) }
+        }
+        ("FMOD_DSP_DESCRIPTION", "paramdesc") => {
+            quote! { vec![] } // TODO
+        }
+        ("FMOD_DSP_STATE", "sidechaindata") => {
+            quote! { to_vec!(value.sidechaindata, value.sidechainchannels) }
+        }
+        _ => match &field.field_type {
+            FundamentalType(name) => match (ptr, &name[..]) {
+                ("*const", "char") => quote! { to_string!(value.#value_name)? },
+                ("*mut", "char") => quote! { to_string!(value.#value_name)? },
+                _ => quote! { value.#value_name },
+            },
+            UserType(name) => match (ptr, api.describe_user_type(name)) {
+                ("*mut", UserTypeDesc::OpaqueType) => {
+                    let name = format_struct_ident(name);
+                    quote! { #name::from_pointer(value.#value_name) }
+                }
+                ("*mut", UserTypeDesc::Structure) => {
+                    let name = format_struct_ident(name);
+                    quote! { #name::from(*value.#value_name)? }
+                }
+                ("", UserTypeDesc::Structure) => {
+                    let name = format_struct_ident(name);
+                    quote! { #name::from(value.#value_name)? }
+                }
+                ("", UserTypeDesc::Enumeration) => {
+                    let name = format_struct_ident(name);
+                    quote! { #name::from(value.#value_name)? }
+                }
+                _ => quote! { value.#value_name },
+            },
+        },
+    };
+
+    Ok(quote! {#name: #getter})
+}
+
+pub fn generate_field_into_code(
+    structure: &str,
+    field: &Field,
+    api: &Api,
+) -> Result<TokenStream, Error> {
+    let name = ffi::format_rust_ident(&field.name);
+    let self_name = format_argument_ident(&field.name);
+    let ptr = describe_ffi_pointer(&field.as_const, &field.pointer);
+
+    let getter = match (structure, &field.name[..]) {
+        ("FMOD_DSP_PARAMETER_3DATTRIBUTES_MULTI", "relative") => {
+            quote! { self.relative.map(Attributes3d::into) }
+        }
+        ("FMOD_CREATESOUNDEXINFO", "inclusionlist") => {
+            quote! { self.inclusionlist.as_ptr() as *mut _ }
+        }
+        ("FMOD_OUTPUT_OBJECT3DINFO", "buffer") => {
+            quote! { self.buffer.as_ptr() as *mut _ }
+        }
+        ("FMOD_ADVANCEDSETTINGS", "ASIOChannelList") => {
+            quote! { self.asio_channel_list.into_iter().map(|val| val.as_ptr()).collect::<Vec<_>>().as_mut_ptr().cast() }
+        }
+        ("FMOD_ADVANCEDSETTINGS", "ASIOSpeakerList") => {
+            quote! { self.asio_speaker_list.into_iter().map(|val| val.into()).collect::<Vec<_>>().as_mut_ptr() }
+        }
+        ("FMOD_DSP_BUFFER_ARRAY", "buffernumchannels") => {
+            quote! { self.buffernumchannels.as_ptr() as *mut _ }
+        }
+        ("FMOD_DSP_BUFFER_ARRAY", "bufferchannelmask") => {
+            quote! { self.bufferchannelmask.as_ptr() as *mut _ }
+        }
+        ("FMOD_DSP_BUFFER_ARRAY", "buffers") => {
+            quote! { self.buffers.as_ptr() as *mut _ }
+        }
+        ("FMOD_DSP_PARAMETER_FLOAT_MAPPING_PIECEWISE_LINEAR", "pointparamvalues") => {
+            quote! { self.pointparamvalues.as_ptr() as *mut _ }
+        }
+        ("FMOD_DSP_PARAMETER_FLOAT_MAPPING_PIECEWISE_LINEAR", "pointpositions") => {
+            quote! { self.pointpositions.as_ptr() as *mut _ }
+        }
+        ("FMOD_DSP_PARAMETER_DESC_INT", "valuenames") => {
+            quote! { self.valuenames.as_ptr() as *mut _ }
+        }
+        ("FMOD_DSP_PARAMETER_DESC_BOOL", "valuenames") => {
+            quote! { self.valuenames.as_ptr() as *mut _ }
+        }
+        ("FMOD_DSP_PARAMETER_FFT", "spectrum") => {
+            quote! { self.spectrum.map(|val| val.as_ptr() as *mut _) }
+        }
+        ("FMOD_DSP_DESCRIPTION", "paramdesc") => {
+            quote! { null_mut() } // TODO
+        }
+        ("FMOD_DSP_STATE", "sidechaindata") => {
+            quote! { self.sidechaindata.as_ptr() as *mut _ }
+        }
+        _ => match &field.field_type {
+            FundamentalType(name) => match (ptr, &name[..]) {
+                ("*const", "char") => quote! { self.#self_name.as_ptr().cast() },
+                ("*mut", "char") => quote! { self.#self_name.as_ptr() as *mut _ },
+                _ => quote! { self.#self_name },
+            },
+            UserType(name) => match (ptr, api.describe_user_type(name)) {
+                ("*mut", UserTypeDesc::OpaqueType) => {
+                    quote! { self.#self_name.as_mut_ptr() }
+                }
+                ("*mut", UserTypeDesc::Structure) => {
+                    quote! { &mut self.#self_name.into() }
+                }
+                ("", UserTypeDesc::Structure) => {
+                    quote! { self.#self_name.into() }
+                }
+                ("", UserTypeDesc::Enumeration) => {
+                    quote! { self.#self_name.into() }
+                }
+                _ => quote! { self.#self_name },
+            },
+        },
+    };
+
+    Ok(quote! {#name: #getter})
+}
+
+pub fn generate_structure_code(structure: &Structure, api: &Api) -> Result<TokenStream, Error> {
+    let structure_name = format_ident!("{}", structure.name);
+    let name = format_struct_ident(&structure.name);
+
+    let mut fields = vec![];
+    let mut from_map = vec![];
+    let mut into_map = vec![];
+    for field in &structure.fields {
+        fields.push(generate_field_code(field, api)?);
+        from_map.push(generate_field_from_code(&structure.name, field, api)?);
+        into_map.push(generate_field_into_code(&structure.name, field, api)?);
+    }
+
+    if let Some(union) = &structure.union {
+        let name = format_ident!("{}__union", structure.name);
+        fields.push(quote! {
+            pub __union: ffi::#name
+        });
+        from_map.push(quote! { __union: value.__union });
+        into_map.push(quote! { __union: self.__union });
+    }
+
+    let debug = if structure.union.is_some() || ["FMOD_DSP_DESCRIPTION"].contains(&&*structure.name)
+    {
+        None
+    } else {
+        Some(quote! {Debug,})
+    };
+
+    Ok(quote! {
+        #[derive(#debug Clone)]
+        pub struct #name {
+            #(#fields),*
+        }
+
+        impl #name {
+            pub fn from(value: ffi::#structure_name) -> Result<#name, Error> {
+                unsafe {
+                    Ok(#name {
+                        #(#from_map),*
+                    })
+                }
+            }
+            pub fn into(self) -> ffi::#structure_name {
+                ffi::#structure_name {
+                    #(#into_map),*
+                }
+            }
+        }
+    })
+}
+
+pub fn generate_method_code(owner: &str, function: &Function, api: &Api) -> TokenStream {
     let mut arguments = vec![];
     let mut output = None;
 
@@ -264,7 +561,10 @@ pub fn generate_method_code(owner: &str, function: &Function) -> TokenStream {
 
     let argument_maps: Vec<TokenStream> =
         arguments.iter().map(generate_argument_map_code).collect();
-    let arguments: Vec<TokenStream> = arguments.iter().map(generate_argument_code).collect();
+    let arguments: Vec<TokenStream> = arguments
+        .iter()
+        .map(|argument| generate_argument_code(argument, api))
+        .collect();
 
     let method = format_ident!(
         "{}",
@@ -303,7 +603,7 @@ pub fn generate_method_code(owner: &str, function: &Function) -> TokenStream {
     }
 }
 
-pub fn generate_struct_code(key: &String, methods: &Vec<&Function>) -> TokenStream {
+pub fn generate_opaque_type_code(key: &String, methods: &Vec<&Function>) -> TokenStream {
     let name = format_struct_ident(key);
     let opaque_type = format_ident!("{}", key);
 
@@ -336,12 +636,72 @@ pub fn generate_struct_code(key: &String, methods: &Vec<&Function>) -> TokenStre
     };
 
     quote! {
+        #[derive(Debug, Clone, Copy)]
         pub struct #name {
             pointer: *mut ffi::#opaque_type,
         }
 
         impl #name {
             #constructor
+            pub fn from_pointer(pointer: *mut ffi::#opaque_type) -> Self {
+                Self { pointer }
+            }
+            pub fn as_mut_ptr(&self) -> *mut ffi::#opaque_type {
+                self.pointer
+            }
+        }
+    }
+}
+
+enum UserTypeDesc {
+    OpaqueType,
+    Structure,
+    Enumeration,
+    Flags,
+    Constant,
+    Unknown,
+}
+
+impl Api {
+    pub fn is_structure(&self, key: &str) -> bool {
+        self.structures
+            .iter()
+            .any(|structure| &structure.name == key)
+    }
+
+    pub fn is_opaque_type(&self, key: &str) -> bool {
+        self.opaque_types
+            .iter()
+            .any(|opaque_type| &opaque_type.name == key)
+    }
+
+    pub fn is_enumeration(&self, key: &str) -> bool {
+        self.enumerations
+            .iter()
+            .any(|enumeration| &enumeration.name == key)
+    }
+
+    pub fn is_flags(&self, key: &str) -> bool {
+        self.flags.iter().any(|flags| &flags.name == key)
+    }
+
+    pub fn is_constant(&self, key: &str) -> bool {
+        self.constants.iter().any(|constant| &constant.name == key)
+    }
+
+    pub fn describe_user_type(&self, key: &str) -> UserTypeDesc {
+        if self.is_structure(key) {
+            UserTypeDesc::Structure
+        } else if self.is_enumeration(key) {
+            UserTypeDesc::Enumeration
+        } else if self.is_flags(key) {
+            UserTypeDesc::Flags
+        } else if self.is_opaque_type(key) {
+            UserTypeDesc::OpaqueType
+        } else if self.is_constant(key) {
+            UserTypeDesc::Constant
+        } else {
+            UserTypeDesc::Unknown
         }
     }
 }
@@ -359,14 +719,14 @@ pub fn generate_lib_code(api: &Api) -> Result<TokenStream, Error> {
         .map(|opaque_type| opaque_type.name.clone());
     let opaque_types: HashSet<String> = HashSet::from_iter(opaque_types);
 
-    let mut structs: BTreeMap<String, Vec<&Function>> = BTreeMap::new();
+    let mut types: BTreeMap<String, Vec<&Function>> = BTreeMap::new();
     for function in &functions {
         let key = extract_struct_key(&function.name);
         if opaque_types.contains(&key) {
-            match structs.get_mut(&key) {
+            match types.get_mut(&key) {
                 Some(methods) => methods.push(function),
                 None => {
-                    structs.insert(key, vec![function]);
+                    types.insert(key, vec![function]);
                 }
             }
         } else {
@@ -374,20 +734,27 @@ pub fn generate_lib_code(api: &Api) -> Result<TokenStream, Error> {
         }
     }
 
-    let structs: Vec<TokenStream> = structs
+    let types: Vec<TokenStream> = types
         .iter()
-        .map(|(key, methods)| generate_struct_code(key, methods))
+        .map(|(key, methods)| generate_opaque_type_code(key, methods))
         .collect();
 
     let enumerations: Vec<TokenStream> = api
         .enumerations
         .iter()
-        .filter(|enumeration| enumeration.name != "FMOD_RESULT")
         .map(generate_enumeration_code)
         .collect();
 
+    let mut structures: Vec<TokenStream> = vec![];
+    for structure in &api.structures {
+        structures.push(generate_structure_code(structure, api)?);
+    }
+
     Ok(quote! {
+        #![allow(unused_unsafe)]
+        use std::ffi::{c_void, CStr, CString, IntoStringError};
         use std::ptr::null_mut;
+        use std::slice;
         pub mod ffi;
 
         #[derive(Debug)]
@@ -400,7 +767,8 @@ pub fn generate_lib_code(api: &Api) -> Result<TokenStream, Error> {
             EnumBindgen {
                 enumeration: String,
                 value: String
-            }
+            },
+            String(IntoStringError)
         }
 
         macro_rules! err_fmod {
@@ -422,9 +790,28 @@ pub fn generate_lib_code(api: &Api) -> Result<TokenStream, Error> {
             };
         }
 
-        #(#enumerations)*
+        macro_rules! to_string {
+            ($ptr:expr) => {
+                CString::from(CStr::from_ptr($ptr)).into_string().map_err(Error::String)
+            };
+        }
 
-        #(#structs)*
+        macro_rules! to_vec {
+            ($ ptr : expr , $ length : expr, $ closure : expr) => {
+                slice::from_raw_parts($ptr, $length as usize).to_vec().into_iter().map($closure).collect::<Result<Vec<_>, Error>>()
+            };
+            ($ ptr : expr , $ length : expr) => {
+                slice::from_raw_parts($ptr, $length as usize).to_vec()
+            };
+        }
+
+        pub fn attr3d_array8(values: Vec<Attributes3d>) -> [Attributes3d; ffi::FMOD_MAX_LISTENERS as usize] {
+            values.try_into().expect("slice with incorrect length")
+        }
+
+        #(#enumerations)*
+        #(#structures)*
+        #(#types)*
     })
 }
 
@@ -435,9 +822,9 @@ pub fn generate(api: &Api) -> Result<String, Error> {
 
 #[cfg(test)]
 mod tests {
-    use crate::lib::{generate_enumeration_code, generate_method_code};
+    use crate::lib::{generate_enumeration_code, generate_method_code, generate_structure_code};
     use crate::models::Type::{FundamentalType, UserType};
-    use crate::models::{Argument, Enumeration, Enumerator, Function, Pointer};
+    use crate::models::{Argument, Enumeration, Enumerator, Field, Function, Pointer, Structure};
 
     fn normal() -> Option<Pointer> {
         Some(Pointer::NormalPointer("*".into()))
@@ -671,5 +1058,89 @@ mod tests {
         }
         .to_string();
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_should_generate_structure() {
+        let structure = Structure {
+            name: "FMOD_VECTOR".to_string(),
+            fields: vec![
+                Field {
+                    as_const: None,
+                    as_array: None,
+                    field_type: FundamentalType("float".to_string()),
+                    pointer: None,
+                    name: "x".to_string(),
+                },
+                Field {
+                    as_const: None,
+                    as_array: None,
+                    field_type: FundamentalType("float".to_string()),
+                    pointer: None,
+                    name: "y".to_string(),
+                },
+                Field {
+                    as_const: None,
+                    as_array: None,
+                    field_type: FundamentalType("float".to_string()),
+                    pointer: None,
+                    name: "z".to_string(),
+                },
+            ],
+            union: None,
+        };
+        let actual = generate_structure_code(&structure).unwrap().to_string();
+        let expected = quote! {
+            #[derive(Debug, Clone)]
+            pub struct Vector {
+                pub x: f32,
+                pub y: f32,
+                pub z: f32
+            }
+
+            impl From<ffi::FMOD_VECTOR> for Vector {
+                fn from (value: ffi::FMOD_VECTOR) -> Self {
+                    Self {
+                        x: value.x,
+                        y: value.y,
+                        z: value.z
+                    }
+                }
+            }
+        }
+        .to_string();
+        assert_eq!(actual, expected)
+    }
+
+    #[test]
+    fn test_should_generate_structure_with_keyword_field() {
+        let structure = Structure {
+            name: "FMOD_PLUGINLIST".to_string(),
+            fields: vec![Field {
+                as_const: None,
+                as_array: None,
+                field_type: UserType("FMOD_PLUGINTYPE".to_string()),
+                pointer: None,
+                name: "type".to_string(),
+            }],
+            union: None,
+        };
+        let actual = generate_structure_code(&structure).unwrap().to_string();
+        let expected = quote! {
+            #[derive(Debug, Clone)]
+            pub struct PluginList {
+                pub type_: PluginType
+            }
+
+            impl From<ffi::FMOD_PLUGINLIST> for PluginList {
+                fn from (value: ffi::FMOD_PLUGINLIST) -> Self {
+                    Self {
+                        type_: value.type_
+                    }
+                }
+            }
+        }
+        .to_string();
+        assert_eq!(actual, expected)
     }
 }
