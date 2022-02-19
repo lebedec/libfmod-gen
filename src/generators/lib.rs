@@ -64,6 +64,7 @@ fn format_enumerator_ident(enumeration: &str, name: &str) -> Ident {
 }
 
 fn extract_method_name(name: &str) -> String {
+    let name = name.replace("3D", "3d");
     match name.rfind('_') {
         Some(index) => name[index..].to_string().to_case(Case::Snake),
         None => name.to_string(),
@@ -91,32 +92,6 @@ pub fn format_argument_ident(name: &str) -> Ident {
         format_ident!("{}_", name)
     } else {
         format_ident!("{}", name)
-    }
-}
-
-pub fn generate_struct_method_code(method: &Function) -> TokenStream {
-    quote! {
-        pub fn load_bank_file(
-            &self,
-            filename: &str,
-            flags: FMOD_STUDIO_LOAD_BANK_FLAGS,
-        ) -> Result<Bank, MyError> {
-            let mut pointer = null_mut();
-            let filename = CString::new(filename).unwrap();
-            let result = unsafe {
-                FMOD_Studio_System_LoadBankFile(
-                    self.pointer,
-                    filename.as_ptr(),
-                    flags,
-                    &mut pointer,
-                )
-            };
-            if result == FMOD_OK {
-                Ok(pointer.into())
-            } else {
-                Err(MyError("FMOD_Studio_System_LoadBankFile".into(), decode_error(result).to_string()))
-            }
-        }
     }
 }
 
@@ -389,7 +364,7 @@ pub fn generate_field_from_code(
             UserType(name) => match (ptr, api.describe_user_type(name)) {
                 ("*mut", UserTypeDesc::OpaqueType) => {
                     let name = format_struct_ident(name);
-                    quote! { #name::from_pointer(value.#value_name) }
+                    quote! { #name::from(value.#value_name) }
                 }
                 ("*mut", UserTypeDesc::Structure) => {
                     let name = format_struct_ident(name);
@@ -547,24 +522,226 @@ pub fn generate_structure_code(structure: &Structure, api: &Api) -> Result<Token
 
 pub fn generate_method_code(owner: &str, function: &Function, api: &Api) -> TokenStream {
     let mut arguments = vec![];
-    let mut output = None;
+    let mut input = vec![];
+    let mut init = vec![];
+    let mut output = vec![];
+    let mut return_types = vec![];
 
     for argument in function.arguments.clone() {
-        if argument.argument_type == UserType(owner.into()) && is_normal(&argument.pointer) {
-            continue;
-        } else if is_double(&argument.pointer) && output.is_none() {
-            output = Some(argument)
-        } else {
-            arguments.push(argument);
+        let ptr = describe_ffi_pointer(&argument.as_const, &argument.pointer);
+        let argument_name = format_argument_ident(&argument.name);
+        match argument.argument_type {
+            FundamentalType(name) => match (ptr, &name[..]) {
+                ("", "float") => {
+                    arguments.push(quote! { #argument_name: f32 });
+                    input.push(quote! { #argument_name })
+                }
+                ("", "int") => {
+                    arguments.push(quote! { #argument_name: i32 });
+                    input.push(quote! { #argument_name })
+                }
+                ("", "unsigned int") => {
+                    arguments.push(quote! { #argument_name: u32 });
+                    input.push(quote! { #argument_name })
+                }
+                ("", "unsigned long long") => {
+                    arguments.push(quote! { #argument_name: u64 });
+                    input.push(quote! { #argument_name })
+                }
+                ("*const", "char") => {
+                    arguments.push(quote! { #argument_name: &str });
+                    input.push(quote! { #argument_name.as_ptr().cast() })
+                }
+                ("*mut", "char") => {
+                    init.push(quote! { let #argument_name = CString::from_vec_unchecked(b"".to_vec()).into_raw(); });
+                    input.push(quote! { #argument_name });
+                    output.push(quote! { CString::from_raw(#argument_name).into_string().map_err(Error::String)? });
+                    return_types.push(quote! { String });
+                }
+                ("*mut", "float") => {
+                    init.push(quote! { let mut #argument_name = f32::default(); });
+                    input.push(quote! { &mut #argument_name });
+                    output.push(quote! { #argument_name });
+                    return_types.push(quote! { f32 });
+                }
+                ("*mut", "unsigned long long") => {
+                    init.push(quote! { let mut #argument_name = u64::default(); });
+                    input.push(quote! { &mut #argument_name });
+                    output.push(quote! { #argument_name });
+                    return_types.push(quote! { u64 });
+                }
+                ("*mut", "long long") => {
+                    init.push(quote! { let mut #argument_name = i64::default(); });
+                    input.push(quote! { &mut #argument_name });
+                    output.push(quote! { #argument_name });
+                    return_types.push(quote! { i64 });
+                }
+                ("*mut", "unsigned int") => {
+                    init.push(quote! { let mut #argument_name = u32::default(); });
+                    input.push(quote! { &mut #argument_name });
+                    output.push(quote! { #argument_name });
+                    return_types.push(quote! { u32 });
+                }
+                ("*mut", "int") => {
+                    init.push(quote! { let mut #argument_name = i32::default(); });
+                    input.push(quote! { &mut #argument_name });
+                    output.push(quote! { #argument_name });
+                    return_types.push(quote! { i32 });
+                }
+                ("*mut", "void") => {
+                    arguments.push(quote! { #argument_name: *mut c_void });
+                    input.push(quote! { #argument_name })
+                }
+                ("*mut *mut", "void") => {
+                    init.push(quote! { let mut #argument_name = null_mut(); });
+                    input.push(quote! { &mut #argument_name });
+                    output.push(quote! { #argument_name });
+                    return_types.push(quote! { *mut c_void });
+                }
+                ("*const", "void") => {
+                    arguments.push(quote! { #argument_name: *const c_void });
+                    input.push(quote! { #argument_name })
+                }
+                (_, _) => {
+                    arguments.push(quote! { #argument_name: c_void });
+                    input.push(quote! { #argument_name })
+                }
+            },
+            UserType(name) => match (ptr, api.describe_user_type(&name)) {
+                ("*mut", UserTypeDesc::OpaqueType) => {
+                    if name == owner && arguments.is_empty() {
+                        arguments.push(quote! { &self });
+                        input.push(quote! { self.pointer });
+                    } else {
+                        let name = format_struct_ident(&name);
+                        arguments.push(quote! { #argument_name: #name });
+                        input.push(quote! { #argument_name.as_mut_ptr() });
+                    }
+                }
+                ("*mut *mut", UserTypeDesc::OpaqueType) => {
+                    let name = format_struct_ident(&name);
+                    init.push(quote! { let mut #argument_name = null_mut(); });
+                    input.push(quote! { &mut #argument_name });
+                    output.push(quote! { #name::from(#argument_name) });
+                    return_types.push(quote! { #name });
+                }
+                ("*mut", UserTypeDesc::TypeAlias) => match &name[..] {
+                    "FMOD_BOOL" => {
+                        init.push(quote! { let mut #argument_name = ffi::FMOD_BOOL::default(); });
+                        input.push(quote! { &mut #argument_name });
+                        output.push(quote! { to_bool!(#argument_name) });
+                        return_types.push(quote! { bool })
+                    }
+                    "FMOD_PORT_INDEX" => {
+                        init.push(quote! { let mut #argument_name = u64::default(); });
+                        input.push(quote! { &mut #argument_name });
+                        output.push(quote! { #argument_name });
+                        return_types.push(quote! { u64 })
+                    }
+                    _ => unreachable!(),
+                },
+                ("*mut", UserTypeDesc::Flags) => {
+                    let name = format_ident!("{}", name);
+                    init.push(quote! { let mut #argument_name = ffi::#name::default(); });
+                    input.push(quote! { &mut #argument_name });
+                    output.push(quote! { #argument_name });
+                    return_types.push(quote! { ffi::#name })
+                }
+                ("*mut", UserTypeDesc::Structure) => {
+                    let structure_name = format_ident!("{}", name);
+                    let name = format_struct_ident(&name);
+                    init.push(quote! { let mut #argument_name = ffi::#structure_name::default(); });
+                    input.push(quote! { &mut #argument_name });
+                    output.push(quote! { #name::from(#argument_name)? });
+                    return_types.push(quote! { #name })
+                }
+                ("*mut *mut", UserTypeDesc::Structure) => {
+                    let structure_name = format_ident!("{}", name);
+                    let name = format_struct_ident(&name);
+                    init.push(quote! { let mut #argument_name = null_mut(); });
+                    input.push(quote! { &mut #argument_name });
+                    output.push(quote! { to_vec!(#argument_name, 1, #name::from)? });
+                    return_types.push(quote! { Vec<#name> })
+                }
+                ("*const *const", UserTypeDesc::Structure) => {
+                    let structure_name = format_ident!("{}", name);
+                    let name = format_struct_ident(&name);
+                    init.push(quote! { let mut #argument_name = null(); });
+                    input.push(quote! { &mut #argument_name });
+                    output.push(quote! { to_vec!(#argument_name, 1, #name::from)? });
+                    return_types.push(quote! { Vec<#name> })
+                }
+                ("*mut", UserTypeDesc::Enumeration) => {
+                    let structure_name = format_ident!("{}", name);
+                    let name = format_struct_ident(&name);
+                    init.push(quote! { let mut #argument_name = ffi::#structure_name::default(); });
+                    input.push(quote! { &mut #argument_name });
+                    output.push(quote! { #name::from(#argument_name)? });
+                    return_types.push(quote! { #name });
+                }
+                ("*const", UserTypeDesc::Structure) => {
+                    let name = format_struct_ident(&name);
+                    arguments.push(quote! { #argument_name: #name });
+                    input.push(quote! { &#argument_name.into() });
+                }
+                ("", UserTypeDesc::Structure) => {
+                    let name = format_struct_ident(&name);
+                    arguments.push(quote! { #argument_name: #name });
+                    input.push(quote! { #argument_name.into() });
+                }
+                ("", UserTypeDesc::TypeAlias) => match &name[..] {
+                    "FMOD_BOOL" => {
+                        arguments.push(quote! { #argument_name: bool });
+                        input.push(quote! { from_bool!(#argument_name) });
+                    }
+                    "FMOD_PORT_INDEX" => {
+                        arguments.push(quote! { #argument_name: u64 });
+                        input.push(quote! { #argument_name });
+                    }
+                    _ => unreachable!(),
+                },
+                ("", UserTypeDesc::Flags) => {
+                    let name = format_ident!("{}", name);
+                    arguments.push(quote! { #argument_name: ffi::#name });
+                    input.push(quote! { #argument_name })
+                }
+                ("", UserTypeDesc::Enumeration) => {
+                    let name = format_struct_ident(&name);
+                    arguments.push(quote! { #argument_name: #name });
+                    input.push(quote! { #argument_name.into() })
+                }
+                ("", UserTypeDesc::Callback) => {
+                    let name = format_ident!("{}", name);
+                    arguments.push(quote! { #argument_name: ffi::#name });
+                    input.push(quote! { #argument_name })
+                }
+                _ => {
+                    arguments.push(quote! { #argument_name: Box<c_void> });
+                    input.push(quote! { #argument_name })
+                }
+            },
         }
     }
 
-    let argument_maps: Vec<TokenStream> =
-        arguments.iter().map(generate_argument_map_code).collect();
-    let arguments: Vec<TokenStream> = arguments
-        .iter()
-        .map(|argument| generate_argument_code(argument, api))
-        .collect();
+    let return_type = match return_types.len() {
+        0 => quote! { () },
+        1 => {
+            let return_types = &return_types[0];
+            quote! { #return_types }
+        }
+        _ => {
+            quote! { (#(#return_types),*) }
+        }
+    };
+
+    let output = match output.len() {
+        0 => quote! { () },
+        1 => {
+            let output = &output[0];
+            quote! { #output }
+        }
+        _ => quote! { (#(#output),*) },
+    };
 
     let method = format_ident!(
         "{}",
@@ -573,67 +750,31 @@ pub fn generate_method_code(owner: &str, function: &Function, api: &Api) -> Toke
     let function_name = &function.name;
     let function = format_ident!("{}", function_name);
 
-    match output {
-        Some(_) => quote! {
-            pub fn #method(&self, #(#arguments),*) -> Result<Bank, Error> {
-                let mut output = null_mut();
-                let filename = CString::new(filename).unwrap();
-                let result = unsafe {
-                    ffi::#function(self.pointer, &mut output)
-                };
-                if result == FMOD_OK {
-                    Ok(output.into())
-                } else {
-                    Err(err_fmod!(#function_name, result))
+    quote! {
+        pub fn #method(
+            #(#arguments),*
+        ) -> Result<#return_type, Error> {
+            unsafe {
+                #(#init)*
+                match ffi::#function(
+                    #(#input),*
+                ) {
+                    ffi::FMOD_OK => Ok(#output),
+                    error => Err(err_fmod!(#function_name, error)),
                 }
             }
-        },
-        None => quote! {
-            pub fn #method(&self, #(#arguments),*) -> Result<(), Error> {
-                let result = unsafe {
-                    ffi::#function(self.pointer, #(#argument_maps),*)
-                };
-                if result == FMOD_OK {
-                    Ok(())
-                } else {
-                    Err(err_fmod!(#function_name, result))
-                }
-            }
-        },
+        }
     }
 }
 
-pub fn generate_opaque_type_code(key: &String, methods: &Vec<&Function>) -> TokenStream {
+pub fn generate_opaque_type_code(key: &String, methods: &Vec<&Function>, api: &Api) -> TokenStream {
     let name = format_struct_ident(key);
     let opaque_type = format_ident!("{}", key);
 
-    let constructor = match methods.iter().find(|method| {
-        method.name.ends_with("Create")
-            && method.arguments.iter().any(|argument| {
-                argument.argument_type == UserType(key.clone())
-                    && argument.pointer == Some(DoublePointer("**".into()))
-            })
-    }) {
-        None => None,
-        Some(function) => {
-            let name = format_ident!("{}", extract_method_name(&function.name));
-            let function_name = &function.name;
-            let function = format_ident!("{}", function_name);
-            Some(quote! {
-                pub fn #name() -> Result<Self, Error> {
-                    let mut pointer = null_mut();
-                    let result = unsafe {
-                        ffi::#function(&mut pointer, ffi::FMOD_VERSION)
-                    };
-                    if result == ffi::FMOD_OK {
-                        Ok(Self { pointer })
-                    } else {
-                        Err(err_fmod!(#function_name, result))
-                    }
-                }
-            })
-        }
-    };
+    let methods: Vec<TokenStream> = methods
+        .iter()
+        .map(|method| generate_method_code(key, method, api))
+        .collect();
 
     quote! {
         #[derive(Debug, Clone, Copy)]
@@ -642,13 +783,15 @@ pub fn generate_opaque_type_code(key: &String, methods: &Vec<&Function>) -> Toke
         }
 
         impl #name {
-            #constructor
-            pub fn from_pointer(pointer: *mut ffi::#opaque_type) -> Self {
+            #[inline]
+            pub fn from(pointer: *mut ffi::#opaque_type) -> Self {
                 Self { pointer }
             }
+            #[inline]
             pub fn as_mut_ptr(&self) -> *mut ffi::#opaque_type {
                 self.pointer
             }
+            #(#methods)*
         }
     }
 }
@@ -659,6 +802,8 @@ enum UserTypeDesc {
     Enumeration,
     Flags,
     Constant,
+    TypeAlias,
+    Callback,
     Unknown,
 }
 
@@ -689,6 +834,16 @@ impl Api {
         self.constants.iter().any(|constant| &constant.name == key)
     }
 
+    pub fn is_type_alias(&self, key: &str) -> bool {
+        self.type_aliases
+            .iter()
+            .any(|type_alias| &type_alias.name == key)
+    }
+
+    pub fn is_callback(&self, key: &str) -> bool {
+        self.callbacks.iter().any(|callback| &callback.name == key)
+    }
+
     pub fn describe_user_type(&self, key: &str) -> UserTypeDesc {
         if self.is_structure(key) {
             UserTypeDesc::Structure
@@ -700,6 +855,10 @@ impl Api {
             UserTypeDesc::OpaqueType
         } else if self.is_constant(key) {
             UserTypeDesc::Constant
+        } else if self.is_type_alias(key) {
+            UserTypeDesc::TypeAlias
+        } else if self.is_callback(key) {
+            UserTypeDesc::Callback
         } else {
             UserTypeDesc::Unknown
         }
@@ -720,6 +879,9 @@ pub fn generate_lib_code(api: &Api) -> Result<TokenStream, Error> {
     let opaque_types: HashSet<String> = HashSet::from_iter(opaque_types);
 
     let mut types: BTreeMap<String, Vec<&Function>> = BTreeMap::new();
+    for ot in &opaque_types {
+        types.insert(ot.clone(), vec![]);
+    }
     for function in &functions {
         let key = extract_struct_key(&function.name);
         if opaque_types.contains(&key) {
@@ -736,7 +898,7 @@ pub fn generate_lib_code(api: &Api) -> Result<TokenStream, Error> {
 
     let types: Vec<TokenStream> = types
         .iter()
-        .map(|(key, methods)| generate_opaque_type_code(key, methods))
+        .map(|(key, methods)| generate_opaque_type_code(key, methods, api))
         .collect();
 
     let enumerations: Vec<TokenStream> = api
@@ -753,7 +915,7 @@ pub fn generate_lib_code(api: &Api) -> Result<TokenStream, Error> {
     Ok(quote! {
         #![allow(unused_unsafe)]
         use std::ffi::{c_void, CStr, CString, IntoStringError};
-        use std::ptr::null_mut;
+        use std::ptr::{null, null_mut};
         use std::slice;
         pub mod ffi;
 
@@ -803,6 +965,23 @@ pub fn generate_lib_code(api: &Api) -> Result<TokenStream, Error> {
             ($ ptr : expr , $ length : expr) => {
                 slice::from_raw_parts($ptr, $length as usize).to_vec()
             };
+        }
+
+        macro_rules! to_bool {
+            ($ value: expr ) => {
+                match $value {
+                    1 => true,
+                    _ => false
+                }
+            }
+        }
+        macro_rules! from_bool {
+            ($ value: expr ) => {
+                match $value {
+                    true => 1,
+                    _ => 0
+                }
+            }
         }
 
         pub fn attr3d_array8(values: Vec<Attributes3d>) -> [Attributes3d; ffi::FMOD_MAX_LISTENERS as usize] {

@@ -3,7 +3,7 @@ use crate::models::{
     Function, OpaqueType, Pointer, Preset, Structure, Type, TypeAlias,
 };
 
-use crate::models::Type::FundamentalType;
+use crate::models::Type::{FundamentalType, UserType};
 use quote::__private::{Ident, LexError, Literal, TokenStream};
 use quote::quote;
 use std::num::{ParseFloatError, ParseIntError};
@@ -221,6 +221,43 @@ pub fn generate_flags_code(flags: &Flags) -> Result<TokenStream, Error> {
     })
 }
 
+pub fn describe_ffi_pointer<'a>(
+    as_const: &'a Option<String>,
+    pointer: &'a Option<Pointer>,
+) -> &'a str {
+    let description = match (as_const, pointer) {
+        (None, None) => "",
+        (None, Some(Pointer::NormalPointer(_))) => "*mut",
+        (None, Some(Pointer::DoublePointer(_))) => "*mut *mut",
+        (Some(_), Some(Pointer::NormalPointer(_))) => "*const",
+        (Some(_), Some(Pointer::DoublePointer(_))) => "*const *const",
+        (Some(_), None) => "",
+    };
+    description
+}
+
+pub fn generate_field_default(field: &Field) -> Result<TokenStream, Error> {
+    let name = format_rust_ident(&field.name);
+    let ptr = describe_ffi_pointer(&field.as_const, &field.pointer);
+    let tokens = match &field.field_type {
+        FundamentalType(name) => match (ptr, &name[..]) {
+            ("*mut", _) => quote! { null_mut() },
+            ("*const", _) => quote! { null_mut() },
+            ("*mut *mut", _) => quote! { null_mut() },
+            ("*const *const", _) => quote! { null_mut() },
+            _ => quote! { Default::default() },
+        },
+        UserType(_) => match ptr {
+            "*mut" => quote! { null_mut() },
+            "*mut *mut" => quote! { null_mut() },
+            _ => quote! {  Default::default() },
+        },
+    };
+    Ok(quote! {
+        #name: #tokens
+    })
+}
+
 pub fn generate_field_code(field: &Field) -> Result<TokenStream, Error> {
     let name = format_rust_ident(&field.name);
     let as_array = match &field.as_array {
@@ -245,8 +282,10 @@ pub fn generate_structure_code(structure: &Structure) -> Result<TokenStream, Err
     let name = format_ident!("{}", structure.name);
 
     let mut fields = vec![];
+    let mut defaults = vec![];
     for field in &structure.fields {
         fields.push(generate_field_code(field)?);
+        defaults.push(generate_field_default(field)?);
     }
 
     let union = match &structure.union {
@@ -276,6 +315,25 @@ pub fn generate_structure_code(structure: &Structure) -> Result<TokenStream, Err
         Some(quote! {Debug,})
     };
 
+    let unimplemented = vec![
+        "FMOD_STUDIO_USER_PROPERTY",
+        "FMOD_DSP_PARAMETER_DESC",
+        "FMOD_DSP_LOUDNESS_METER_INFO_TYPE",
+        "FMOD_DSP_PARAMETER_FFT",
+    ];
+
+    let default = if unimplemented.contains(&&*structure.name) {
+        quote! {
+            unimplemented!()
+        }
+    } else {
+        quote! {
+            Self {
+                #(#defaults),*
+            }
+        }
+    };
+
     Ok(quote! {
         #[repr(C)]
         #[derive(#debug Copy, Clone)]
@@ -283,6 +341,11 @@ pub fn generate_structure_code(structure: &Structure) -> Result<TokenStream, Err
             #(#fields),*
         }
         #union
+        impl Default for #name {
+            fn default() -> Self {
+                #default
+            }
+        }
     })
 }
 
@@ -422,6 +485,7 @@ pub fn generate_ffi_code(api: &Api) -> Result<TokenStream, Error> {
         #![allow(non_snake_case)]
         #![allow(unused_parens)]
         use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
+        use std::ptr::null_mut;
 
         #(#opaque_types)*
         #(#type_aliases)*
