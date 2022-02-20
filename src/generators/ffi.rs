@@ -2,6 +2,7 @@ use crate::models::{
     Api, Argument, Callback, Constant, Enumeration, Error, ErrorStringMapping, Field, Flags,
     Function, OpaqueType, Pointer, Preset, Structure, Type, TypeAlias,
 };
+use std::borrow::Borrow;
 
 use crate::models::Type::{FundamentalType, UserType};
 use quote::__private::{Ident, LexError, Literal, TokenStream};
@@ -232,6 +233,20 @@ pub fn describe_ffi_pointer<'a>(
         (Some(_), Some(Pointer::NormalPointer(_))) => "*const",
         (Some(_), Some(Pointer::DoublePointer(_))) => "*const *const",
         (Some(_), None) => "",
+    };
+    description
+}
+
+pub fn describe_pointer<'a>(
+    as_const: &'a Option<String>,
+    pointer: &'a Option<Pointer>,
+    name: &String,
+) -> String {
+    let pointer = describe_ffi_pointer(as_const, pointer);
+    let description = if pointer.is_empty() {
+        format!("{}", name)
+    } else {
+        format!("{} {}", pointer, name)
     };
     description
 }

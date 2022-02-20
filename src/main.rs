@@ -10,7 +10,7 @@ extern crate proc_macro;
 extern crate pest_derive;
 
 use crate::generators::{ffi, lib};
-use crate::models::{Api, Error, OpaqueType};
+use crate::models::{Api, Error, OpaqueType, ParameterModifier};
 use crate::parsers::{
     fmod, fmod_codec, fmod_common, fmod_docs, fmod_dsp, fmod_dsp_effects, fmod_errors, fmod_output,
     fmod_studio, fmod_studio_common,
@@ -92,11 +92,6 @@ fn generate_lib_fmod(source: &str) -> Result<(), Error> {
     let header = fmod_errors::parse(&data)?;
     api.errors = header.mapping.clone();
 
-    // post processing
-    api.opaque_types.push(OpaqueType {
-        name: "FMOD_STUDIO_SYSTEM".into(),
-    });
-
     api.modifiers = fmod_docs::parse_parameter_modifiers(&[
         source.join("doc/FMOD API User Manual/core-api-system.html"),
         source.join("doc/FMOD API User Manual/core-api-soundgroup.html"),
@@ -121,6 +116,25 @@ fn generate_lib_fmod(source: &str) -> Result<(), Error> {
         source.join("doc/FMOD API User Manual/studio-api-system.html"),
         source.join("doc/FMOD API User Manual/studio-api-vca.html"),
     ])?;
+
+    // POST PROCESSING
+
+    api.opaque_types.push(OpaqueType {
+        name: "FMOD_STUDIO_SYSTEM".into(),
+    });
+    let not_specified_output = &[
+        "FMOD_Studio_CommandReplay_GetSystem+system",
+        "FMOD_Studio_CommandReplay_GetCommandString+buffer",
+        "FMOD_Studio_CommandReplay_GetPaused+paused",
+        "FMOD_Studio_CommandReplay_GetUserData+userdata",
+        "FMOD_Studio_EventDescription_Is3D+is3D",
+        "FMOD_Studio_System_GetCoreSystem+coresystem",
+        "FMOD_System_GetNumNestedPlugins+count",
+    ];
+    for key in not_specified_output {
+        api.modifiers
+            .insert(key.to_string(), ParameterModifier::Output);
+    }
 
     println!("FMOD API");
     println!("Opaque Types: {}", api.opaque_types.len());

@@ -147,6 +147,7 @@ lazy_static! {
                 "DspParameter3DattributesMulti",
                 "DspParameterAttributes3dMulti",
             ),
+            ("3DRolloffCallback", "RolloffCallback3d"),
         ])
     };
 }

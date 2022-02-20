@@ -1,7 +1,10 @@
 use crate::ffi;
+use crate::ffi::describe_ffi_pointer;
 use crate::models::Pointer::DoublePointer;
 use crate::models::Type::{FundamentalType, UserType};
-use crate::models::{Api, Argument, Enumeration, Error, Field, Function, Pointer, Structure, Type};
+use crate::models::{
+    Api, Argument, Enumeration, Error, Field, Function, ParameterModifier, Pointer, Structure, Type,
+};
 use convert_case::{Case, Casing};
 use quote::__private::{Ident, TokenStream};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -109,21 +112,6 @@ pub fn is_double(pointer: &Option<Pointer>) -> bool {
     } else {
         false
     }
-}
-
-pub fn describe_ffi_pointer<'a>(
-    as_const: &'a Option<String>,
-    pointer: &'a Option<Pointer>,
-) -> &'a str {
-    let description = match (as_const, pointer) {
-        (None, None) => "",
-        (None, Some(Pointer::NormalPointer(_))) => "*mut",
-        (None, Some(Pointer::DoublePointer(_))) => "*mut *mut",
-        (Some(_), Some(Pointer::NormalPointer(_))) => "*const",
-        (Some(_), Some(Pointer::DoublePointer(_))) => "*const *const",
-        (Some(_), None) => "",
-    };
-    description
 }
 
 pub fn format_rust_type(
@@ -530,224 +518,336 @@ pub fn generate_structure_code(structure: &Structure, api: &Api) -> Result<Token
     })
 }
 
+struct OutArgument {
+    pub target: TokenStream,
+    pub source: TokenStream,
+    pub output: TokenStream,
+    pub retype: TokenStream,
+}
+
+struct InArgument {
+    pub param: TokenStream,
+    pub input: TokenStream,
+}
+
 pub fn generate_method_code(owner: &str, function: &Function, api: &Api) -> TokenStream {
     let mut arguments = vec![];
-    let mut input = vec![];
-    let mut init = vec![];
-    let mut output = vec![];
+    let mut inputs = vec![];
+    let mut inits = vec![];
+    let mut outputs = vec![];
     let mut return_types = vec![];
 
-    for argument in function.arguments.clone() {
-        let ptr = describe_ffi_pointer(&argument.as_const, &argument.pointer);
+    for argument in &function.arguments {
         let argument_name = format_argument_ident(&argument.name);
+        let argument_ptr = describe_ffi_pointer(&argument.as_const, &argument.pointer);
 
-        match (&function.name[..], &argument.name[..]) {
-            ("FMOD_Studio_System_Create", "headerversion") => {
-                input.push(quote! { ffi::FMOD_VERSION })
-            }
-            ("FMOD_System_Create", "headerversion") => input.push(quote! { ffi::FMOD_VERSION }),
-            ("FMOD_Studio_System_SetAdvancedSettings", "settings") => {
-                arguments.push(quote! { settings: StudioAdvancedSettings });
-                input.push(quote! { &mut settings.into() });
-            }
-            ("FMOD_System_SetAdvancedSettings", "settings") => {
-                arguments.push(quote! { settings: AdvancedSettings });
-                input.push(quote! { &mut settings.into() });
-            }
-            _ => {
-                match argument.argument_type {
-                    FundamentalType(name) => match (ptr, &name[..]) {
-                        ("", "float") => {
-                            arguments.push(quote! { #argument_name: f32 });
-                            input.push(quote! { #argument_name })
-                        }
-                        ("", "int") => {
-                            arguments.push(quote! { #argument_name: i32 });
-                            input.push(quote! { #argument_name })
-                        }
-                        ("", "unsigned int") => {
-                            arguments.push(quote! { #argument_name: u32 });
-                            input.push(quote! { #argument_name })
-                        }
-                        ("", "unsigned long long") => {
-                            arguments.push(quote! { #argument_name: u64 });
-                            input.push(quote! { #argument_name })
-                        }
-                        ("*const", "char") => {
-                            arguments.push(quote! { #argument_name: &str });
-                            input.push(quote! { #argument_name.as_ptr().cast() })
-                        }
-                        ("*mut", "char") => {
-                            init.push(quote! { let #argument_name = CString::from_vec_unchecked(b"".to_vec()).into_raw(); });
-                            input.push(quote! { #argument_name });
-                            output.push(quote! { CString::from_raw(#argument_name).into_string().map_err(Error::String)? });
-                            return_types.push(quote! { String });
-                        }
-                        ("*mut", "float") => {
-                            init.push(quote! { let mut #argument_name = f32::default(); });
-                            input.push(quote! { &mut #argument_name });
-                            output.push(quote! { #argument_name });
-                            return_types.push(quote! { f32 });
-                        }
-                        ("*mut", "unsigned long long") => {
-                            init.push(quote! { let mut #argument_name = u64::default(); });
-                            input.push(quote! { &mut #argument_name });
-                            output.push(quote! { #argument_name });
-                            return_types.push(quote! { u64 });
-                        }
-                        ("*mut", "long long") => {
-                            init.push(quote! { let mut #argument_name = i64::default(); });
-                            input.push(quote! { &mut #argument_name });
-                            output.push(quote! { #argument_name });
-                            return_types.push(quote! { i64 });
-                        }
-                        ("*mut", "unsigned int") => {
-                            init.push(quote! { let mut #argument_name = u32::default(); });
-                            input.push(quote! { &mut #argument_name });
-                            output.push(quote! { #argument_name });
-                            return_types.push(quote! { u32 });
-                        }
-                        ("*mut", "int") => {
-                            init.push(quote! { let mut #argument_name = i32::default(); });
-                            input.push(quote! { &mut #argument_name });
-                            output.push(quote! { #argument_name });
-                            return_types.push(quote! { i32 });
-                        }
-                        ("*mut", "void") => {
-                            arguments.push(quote! { #argument_name: *mut c_void });
-                            input.push(quote! { #argument_name })
-                        }
-                        ("*mut *mut", "void") => {
-                            init.push(quote! { let mut #argument_name = null_mut(); });
-                            input.push(quote! { &mut #argument_name });
-                            output.push(quote! { #argument_name });
-                            return_types.push(quote! { *mut c_void });
-                        }
-                        ("*const", "void") => {
-                            arguments.push(quote! { #argument_name: *const c_void });
-                            input.push(quote! { #argument_name })
-                        }
-                        (_, _) => {
-                            arguments.push(quote! { #argument_name: c_void });
-                            input.push(quote! { #argument_name })
-                        }
-                    },
-                    UserType(name) => match (ptr, api.describe_user_type(&name)) {
-                        ("*mut", UserTypeDesc::OpaqueType) => {
-                            if name == owner && arguments.is_empty() {
-                                arguments.push(quote! { &self });
-                                input.push(quote! { self.pointer });
-                            } else {
-                                let name = format_struct_ident(&name);
-                                arguments.push(quote! { #argument_name: #name });
-                                input.push(quote! { #argument_name.as_mut_ptr() });
-                            }
-                        }
-                        ("*mut *mut", UserTypeDesc::OpaqueType) => {
-                            let name = format_struct_ident(&name);
-                            init.push(quote! { let mut #argument_name = null_mut(); });
-                            input.push(quote! { &mut #argument_name });
-                            output.push(quote! { #name::from(#argument_name) });
-                            return_types.push(quote! { #name });
-                        }
-                        ("*mut", UserTypeDesc::TypeAlias) => {
-                            match &name[..] {
-                                "FMOD_BOOL" => {
-                                    init.push(quote! { let mut #argument_name = ffi::FMOD_BOOL::default(); });
-                                    input.push(quote! { &mut #argument_name });
-                                    output.push(quote! { to_bool!(#argument_name) });
-                                    return_types.push(quote! { bool })
-                                }
-                                "FMOD_PORT_INDEX" => {
-                                    init.push(quote! { let mut #argument_name = u64::default(); });
-                                    input.push(quote! { &mut #argument_name });
-                                    output.push(quote! { #argument_name });
-                                    return_types.push(quote! { u64 })
-                                }
-                                _ => unreachable!(),
-                            }
-                        }
-                        ("*mut", UserTypeDesc::Flags) => {
-                            let name = format_ident!("{}", name);
-                            init.push(quote! { let mut #argument_name = ffi::#name::default(); });
-                            input.push(quote! { &mut #argument_name });
-                            output.push(quote! { #argument_name });
-                            return_types.push(quote! { ffi::#name })
-                        }
-                        ("*mut", UserTypeDesc::Structure) => {
-                            let structure_name = format_ident!("{}", name);
-                            let name = format_struct_ident(&name);
-                            init.push(quote! { let mut #argument_name = ffi::#structure_name::default(); });
-                            input.push(quote! { &mut #argument_name });
-                            output.push(quote! { #name::from(#argument_name)? });
-                            return_types.push(quote! { #name })
-                        }
-                        ("*mut *mut", UserTypeDesc::Structure) => {
-                            let structure_name = format_ident!("{}", name);
-                            let name = format_struct_ident(&name);
-                            init.push(quote! { let mut #argument_name = null_mut(); });
-                            input.push(quote! { &mut #argument_name });
-                            output.push(quote! { to_vec!(#argument_name, 1, #name::from)? });
-                            return_types.push(quote! { Vec<#name> })
-                        }
-                        ("*const *const", UserTypeDesc::Structure) => {
-                            let structure_name = format_ident!("{}", name);
-                            let name = format_struct_ident(&name);
-                            init.push(quote! { let mut #argument_name = null(); });
-                            input.push(quote! { &mut #argument_name });
-                            output.push(quote! { to_vec!(#argument_name, 1, #name::from)? });
-                            return_types.push(quote! { Vec<#name> })
-                        }
-                        ("*mut", UserTypeDesc::Enumeration) => {
-                            let structure_name = format_ident!("{}", name);
-                            let name = format_struct_ident(&name);
-                            init.push(quote! { let mut #argument_name = ffi::#structure_name::default(); });
-                            input.push(quote! { &mut #argument_name });
-                            output.push(quote! { #name::from(#argument_name)? });
-                            return_types.push(quote! { #name });
-                        }
-                        ("*const", UserTypeDesc::Structure) => {
-                            let name = format_struct_ident(&name);
-                            arguments.push(quote! { #argument_name: #name });
-                            input.push(quote! { &#argument_name.into() });
-                        }
-                        ("", UserTypeDesc::Structure) => {
-                            let name = format_struct_ident(&name);
-                            arguments.push(quote! { #argument_name: #name });
-                            input.push(quote! { #argument_name.into() });
-                        }
-                        ("", UserTypeDesc::TypeAlias) => match &name[..] {
-                            "FMOD_BOOL" => {
-                                arguments.push(quote! { #argument_name: bool });
-                                input.push(quote! { from_bool!(#argument_name) });
-                            }
-                            "FMOD_PORT_INDEX" => {
-                                arguments.push(quote! { #argument_name: u64 });
-                                input.push(quote! { #argument_name });
-                            }
-                            _ => unreachable!(),
+        if &UserType(owner.to_string()) == &argument.argument_type
+            && arguments.is_empty()
+            && argument_ptr == "*mut"
+        {
+            arguments.push(quote! { &self });
+            inputs.push(quote! { self.pointer });
+            continue;
+        }
+
+        if function.name == "FMOD_Studio_System_Create" && argument.name == "headerversion" {
+            inputs.push(quote! { ffi::FMOD_VERSION });
+            continue;
+        }
+
+        if function.name == "FMOD_System_Create" && argument.name == "headerversion" {
+            inputs.push(quote! { ffi::FMOD_VERSION });
+            continue;
+        }
+
+        match api.get_modifier(&function.name, &argument.name) {
+            None => {
+                let argument = match &argument.argument_type {
+                    FundamentalType(name) => match &format!("{}:{}", argument_ptr, name)[..] {
+                        ":float" => InArgument {
+                            param: quote! { #argument_name: f32 },
+                            input: quote! { #argument_name },
                         },
-                        ("", UserTypeDesc::Flags) => {
-                            let name = format_ident!("{}", name);
-                            arguments.push(quote! { #argument_name: ffi::#name });
-                            input.push(quote! { #argument_name })
+                        ":int" => InArgument {
+                            param: quote! { #argument_name: i32 },
+                            input: quote! { #argument_name },
+                        },
+                        ":unsigned int" => InArgument {
+                            param: quote! { #argument_name: u32 },
+                            input: quote! { #argument_name },
+                        },
+                        ":unsigned long long" => InArgument {
+                            param: quote! { #argument_name: u64 },
+                            input: quote! { #argument_name },
+                        },
+                        "*const:char" => InArgument {
+                            param: quote! { #argument_name: &str },
+                            input: quote! { #argument_name.as_ptr().cast() },
+                        },
+                        "*mut:void" => InArgument {
+                            param: quote! { #argument_name: *mut c_void },
+                            input: quote! { #argument_name },
+                        },
+                        "*const:void" => InArgument {
+                            param: quote! { #argument_name: *const c_void },
+                            input: quote! { #argument_name },
+                        },
+                        "*mut:float" => InArgument {
+                            param: quote! { #argument_name: *mut f32 }, // TODO: array
+                            input: quote! { #argument_name },
+                        },
+                        argument_type => unimplemented!(
+                            "in {}, {} {}",
+                            &function.name,
+                            &argument.name,
+                            argument_type
+                        ),
+                    },
+                    UserType(user_type) => {
+                        let name = format_struct_ident(&user_type);
+                        let ident = format_ident!("{}", user_type);
+                        match (argument_ptr, api.describe_user_type(&user_type)) {
+                            ("*mut", UserTypeDesc::OpaqueType) => InArgument {
+                                param: quote! { #argument_name: #name },
+                                input: quote! { #argument_name.as_mut_ptr() },
+                            },
+                            ("*const", UserTypeDesc::Structure) => InArgument {
+                                param: quote! { #argument_name: #name },
+                                input: quote! { &#argument_name.into() },
+                            },
+                            ("*mut", UserTypeDesc::Structure) => InArgument {
+                                param: quote! { #argument_name: #name },
+                                input: quote! { &mut #argument_name.into() },
+                            },
+                            ("", UserTypeDesc::Structure) => InArgument {
+                                param: quote! { #argument_name: #name },
+                                input: quote! { #argument_name.into() },
+                            },
+                            ("", UserTypeDesc::TypeAlias) => match &user_type[..] {
+                                "FMOD_BOOL" => InArgument {
+                                    param: quote! { #argument_name: bool },
+                                    input: quote! { from_bool!(#argument_name) },
+                                },
+                                "FMOD_PORT_INDEX" => InArgument {
+                                    param: quote! { #argument_name: u64 },
+                                    input: quote! { #argument_name },
+                                },
+                                alias => unimplemented!("{}, {}", &function.name, alias),
+                            },
+                            ("", UserTypeDesc::Flags) => InArgument {
+                                param: quote! { #argument_name: ffi::#ident },
+                                input: quote! { #argument_name },
+                            },
+                            ("", UserTypeDesc::Enumeration) => InArgument {
+                                param: quote! { #argument_name: #name },
+                                input: quote! { #argument_name.into() },
+                            },
+                            ("", UserTypeDesc::Callback) => InArgument {
+                                param: quote! { #argument_name: ffi::#ident },
+                                input: quote! { #argument_name },
+                            },
+                            user_type => unimplemented!(
+                                "in {}, {}: {:?}",
+                                &function.name,
+                                &argument.name,
+                                user_type
+                            ),
                         }
-                        ("", UserTypeDesc::Enumeration) => {
-                            let name = format_struct_ident(&name);
-                            arguments.push(quote! { #argument_name: #name });
-                            input.push(quote! { #argument_name.into() })
-                        }
-                        ("", UserTypeDesc::Callback) => {
-                            let name = format_ident!("{}", name);
-                            arguments.push(quote! { #argument_name: ffi::#name });
-                            input.push(quote! { #argument_name })
-                        }
-                        _ => {
-                            arguments.push(quote! { #argument_name: Box<c_void> });
-                            input.push(quote! { #argument_name })
+                    }
+                };
+                arguments.push(argument.param);
+                inputs.push(argument.input);
+            }
+            Some(ParameterModifier::Optional) => {
+                let argument = match &argument.argument_type {
+                    FundamentalType(name) => match &format!("{}:{}", argument_ptr, name)[..] {
+                        ":int" => InArgument {
+                            param: quote! { #argument_name: Option<i32> },
+                            input: quote! { #argument_name.unwrap_or(0) },
+                        },
+                        ":float" => InArgument {
+                            param: quote! { #argument_name: Option<f32> },
+                            input: quote! { #argument_name.unwrap_or(0.0) },
+                        },
+                        ":unsigned long long" => InArgument {
+                            param: quote! { #argument_name: Option<u64> },
+                            input: quote! { #argument_name.unwrap_or(0) },
+                        },
+                        ":unsigned int" => InArgument {
+                            param: quote! { #argument_name: Option<u32> },
+                            input: quote! { #argument_name.unwrap_or(0) },
+                        },
+                        "*mut:float" => InArgument {
+                            param: quote! { #argument_name: Option<*mut f32> }, // TODO: array, matrix
+                            input: quote! { #argument_name.unwrap_or(null_mut()) },
+                        },
+                        "*const:char" => InArgument {
+                            param: quote! { #argument_name: Option<String> },
+                            input: quote! { #argument_name.map(|value| value.as_ptr().cast()).unwrap_or(null_mut()) },
+                        },
+                        "*mut:void" => InArgument {
+                            param: quote! { #argument_name: Option<*mut c_void> },
+                            input: quote! { #argument_name.unwrap_or(null_mut()) },
+                        },
+                        argument_type => {
+                            unimplemented!("opt {}, {}", &function.name, argument_type)
                         }
                     },
-                }
+                    UserType(user_type) => {
+                        let name = format_struct_ident(&user_type);
+                        let ident = format_ident!("{}", user_type);
+                        match (argument_ptr, api.describe_user_type(&user_type)) {
+                            ("*mut", UserTypeDesc::Structure) => InArgument {
+                                param: quote! { #argument_name: Option<#name> },
+                                input: quote! { #argument_name.map(|value| &mut value.into() as *mut _).unwrap_or(null_mut()) },
+                            },
+                            ("*mut", UserTypeDesc::OpaqueType) => InArgument {
+                                param: quote! { #argument_name: Option<#name> },
+                                input: quote! { #argument_name.map(|value| value.as_mut_ptr()).unwrap_or(null_mut()) },
+                            },
+                            ("*const", UserTypeDesc::Structure) => InArgument {
+                                param: quote! { #argument_name: Option<#name> },
+                                input: quote! { #argument_name.map(|value| &value.into() as *const _).unwrap_or(null()) },
+                            },
+                            ("", UserTypeDesc::Enumeration) => InArgument {
+                                param: quote! { #argument_name: Option<#name> },
+                                input: quote! { #argument_name.map(|value| value.into()).unwrap_or(0) },
+                            },
+                            ("", UserTypeDesc::Callback) => InArgument {
+                                param: quote! { #argument_name: ffi::#ident },
+                                input: quote! { #argument_name },
+                            },
+                            user_type => unimplemented!("opt {}, {:?}", &function.name, user_type),
+                        }
+                    }
+                };
+                arguments.push(argument.param);
+                inputs.push(argument.input);
+            }
+            Some(ParameterModifier::Output) => {
+                let argument = match &argument.argument_type {
+                    FundamentalType(name) => match &format!("{}:{}", argument_ptr, name)[..] {
+                        ":int" => OutArgument {
+                            target: quote! { let mut #argument_name = i32::default(); },
+                            source: quote! { #argument_name },
+                            output: quote! { #argument_name },
+                            retype: quote! { i32 },
+                        },
+                        "*mut:char" => OutArgument {
+                            target: quote! { let #argument_name = CString::from_vec_unchecked(b"".to_vec()).into_raw(); },
+                            source: quote! { #argument_name },
+                            output: quote! { CString::from_raw(#argument_name).into_string().map_err(Error::String)? },
+                            retype: quote! { String },
+                        },
+                        "*mut:float" => OutArgument {
+                            target: quote! { let mut #argument_name = f32::default(); },
+                            source: quote! { &mut #argument_name },
+                            output: quote! { #argument_name },
+                            retype: quote! { f32 },
+                        },
+                        "*mut:unsigned long long" => OutArgument {
+                            target: quote! { let mut #argument_name = u64::default(); },
+                            source: quote! { &mut #argument_name },
+                            output: quote! { #argument_name },
+                            retype: quote! { u64 },
+                        },
+                        "*mut:long long" => OutArgument {
+                            target: quote! { let mut #argument_name = i64::default(); },
+                            source: quote! { &mut #argument_name },
+                            output: quote! { #argument_name },
+                            retype: quote! { i64 },
+                        },
+                        "*mut:unsigned int" => OutArgument {
+                            target: quote! { let mut #argument_name = u32::default(); },
+                            source: quote! { &mut #argument_name },
+                            output: quote! { #argument_name },
+                            retype: quote! { u32 },
+                        },
+                        "*mut:int" => OutArgument {
+                            target: quote! { let mut #argument_name = i32::default(); },
+                            source: quote! { &mut #argument_name },
+                            output: quote! { #argument_name },
+                            retype: quote! { i32 },
+                        },
+                        "*mut *mut:void" => OutArgument {
+                            target: quote! { let mut #argument_name = null_mut(); },
+                            source: quote! { &mut #argument_name },
+                            output: quote! { #argument_name },
+                            retype: quote! { *mut c_void },
+                        },
+                        "*mut:void" => OutArgument {
+                            target: quote! { let mut #argument_name = null_mut(); },
+                            source: quote! { #argument_name },
+                            output: quote! { #argument_name },
+                            retype: quote! { *mut c_void },
+                        },
+                        argument_type => {
+                            unimplemented!("out {}, {}", &function.name, argument_type)
+                        }
+                    },
+                    UserType(user_type) => {
+                        let name = format_struct_ident(&user_type);
+                        let ident = format_ident!("{}", user_type);
+                        match (argument_ptr, api.describe_user_type(&user_type)) {
+                            ("*mut", UserTypeDesc::TypeAlias) => match &user_type[..] {
+                                "FMOD_BOOL" => OutArgument {
+                                    target: quote! { let mut #argument_name = ffi::FMOD_BOOL::default(); },
+                                    source: quote! { &mut #argument_name },
+                                    output: quote! { to_bool!(#argument_name) },
+                                    retype: quote! { bool },
+                                },
+                                "FMOD_PORT_INDEX" => OutArgument {
+                                    target: quote! { let mut #argument_name = u64::default(); },
+                                    source: quote! { &mut #argument_name },
+                                    output: quote! { #argument_name },
+                                    retype: quote! { u64 },
+                                },
+                                alias => unimplemented!("{}, {}", &function.name, alias),
+                            },
+                            ("*mut *mut", UserTypeDesc::OpaqueType) => OutArgument {
+                                target: quote! { let mut #argument_name = null_mut(); },
+                                source: quote! { &mut #argument_name },
+                                output: quote! { #name::from(#argument_name) },
+                                retype: quote! { #name },
+                            },
+                            ("*mut", UserTypeDesc::Flags) => OutArgument {
+                                target: quote! { let mut #argument_name = ffi::#ident::default(); },
+                                source: quote! { &mut #argument_name },
+                                output: quote! { #argument_name },
+                                retype: quote! { ffi::#ident },
+                            },
+                            ("*mut", UserTypeDesc::Structure) => OutArgument {
+                                target: quote! { let mut #argument_name = ffi::#ident::default(); },
+                                source: quote! { &mut #argument_name },
+                                output: quote! { #name::from(#argument_name)? },
+                                retype: quote! { #name },
+                            },
+                            ("*mut *mut", UserTypeDesc::Structure) => OutArgument {
+                                target: quote! { let mut #argument_name = null_mut(); },
+                                source: quote! { &mut #argument_name },
+                                output: quote! { to_vec!(#argument_name, 1, #name::from)? }, //TODO:1
+                                retype: quote! { Vec<#name> },
+                            },
+                            ("*const *const", UserTypeDesc::Structure) => OutArgument {
+                                target: quote! { let mut #argument_name = null(); },
+                                source: quote! { &mut #argument_name },
+                                output: quote! { to_vec!(#argument_name, 1, #name::from)? }, //TODO:1
+                                retype: quote! { Vec<#name> },
+                            },
+                            ("*mut", UserTypeDesc::Enumeration) => OutArgument {
+                                target: quote! { let mut #argument_name = ffi::#ident::default(); },
+                                source: quote! { &mut #argument_name },
+                                output: quote! { #name::from(#argument_name)? },
+                                retype: quote! { #name },
+                            },
+                            user_type => unimplemented!("out {}, {:?}", &function.name, user_type),
+                        }
+                    }
+                };
+                inits.push(argument.target);
+                inputs.push(argument.source);
+                outputs.push(argument.output);
+                return_types.push(argument.retype);
             }
         }
     }
@@ -763,13 +863,13 @@ pub fn generate_method_code(owner: &str, function: &Function, api: &Api) -> Toke
         }
     };
 
-    let output = match output.len() {
+    let output = match outputs.len() {
         0 => quote! { () },
         1 => {
-            let output = &output[0];
+            let output = &outputs[0];
             quote! { #output }
         }
-        _ => quote! { (#(#output),*) },
+        _ => quote! { (#(#outputs),*) },
     };
 
     let method = format_ident!(
@@ -784,9 +884,9 @@ pub fn generate_method_code(owner: &str, function: &Function, api: &Api) -> Toke
             #(#arguments),*
         ) -> Result<#return_type, Error> {
             unsafe {
-                #(#init)*
+                #(#inits)*
                 match ffi::#function(
-                    #(#input),*
+                    #(#inputs),*
                 ) {
                     ffi::FMOD_OK => Ok(#output),
                     error => Err(err_fmod!(#function_name, error)),
@@ -825,6 +925,7 @@ pub fn generate_opaque_type_code(key: &String, methods: &Vec<&Function>, api: &A
     }
 }
 
+#[derive(Debug)]
 enum UserTypeDesc {
     OpaqueType,
     Structure,
@@ -890,6 +991,14 @@ impl Api {
             UserTypeDesc::Callback
         } else {
             UserTypeDesc::Unknown
+        }
+    }
+
+    pub fn get_modifier(&self, function: &str, argument: &str) -> Option<ParameterModifier> {
+        let key = format!("{}+{}", function, argument);
+        match self.modifiers.get(&key) {
+            None => None,
+            Some(modifier) => Some(modifier.clone()),
         }
     }
 }
