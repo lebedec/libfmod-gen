@@ -236,23 +236,33 @@ pub fn describe_ffi_pointer<'a>(
     description
 }
 
-pub fn generate_field_default(field: &Field) -> Result<TokenStream, Error> {
+pub fn generate_field_default(owner: &str, field: &Field) -> Result<TokenStream, Error> {
     let name = format_rust_ident(&field.name);
     let ptr = describe_ffi_pointer(&field.as_const, &field.pointer);
-    let tokens = match &field.field_type {
-        FundamentalType(name) => match (ptr, &name[..]) {
-            ("*mut", _) => quote! { null_mut() },
-            ("*const", _) => quote! { null_mut() },
-            ("*mut *mut", _) => quote! { null_mut() },
-            ("*const *const", _) => quote! { null_mut() },
-            _ => quote! { Default::default() },
-        },
-        UserType(_) => match ptr {
-            "*mut" => quote! { null_mut() },
-            "*mut *mut" => quote! { null_mut() },
-            _ => quote! {  Default::default() },
+
+    let tokens = match (owner, &field.name[..]) {
+        ("FMOD_STUDIO_ADVANCEDSETTINGS", "cbsize") => {
+            quote! { size_of::<FMOD_STUDIO_ADVANCEDSETTINGS>() as i32 }
+        }
+        ("FMOD_ADVANCEDSETTINGS", "cbSize") => {
+            quote! { size_of::<FMOD_ADVANCEDSETTINGS>() as i32 }
+        }
+        _ => match &field.field_type {
+            FundamentalType(name) => match (ptr, &name[..]) {
+                ("*mut", _) => quote! { null_mut() },
+                ("*const", _) => quote! { null_mut() },
+                ("*mut *mut", _) => quote! { null_mut() },
+                ("*const *const", _) => quote! { null_mut() },
+                _ => quote! { Default::default() },
+            },
+            UserType(_) => match ptr {
+                "*mut" => quote! { null_mut() },
+                "*mut *mut" => quote! { null_mut() },
+                _ => quote! {  Default::default() },
+            },
         },
     };
+
     Ok(quote! {
         #name: #tokens
     })
@@ -285,7 +295,7 @@ pub fn generate_structure_code(structure: &Structure) -> Result<TokenStream, Err
     let mut defaults = vec![];
     for field in &structure.fields {
         fields.push(generate_field_code(field)?);
-        defaults.push(generate_field_default(field)?);
+        defaults.push(generate_field_default(&structure.name, field)?);
     }
 
     let union = match &structure.union {
@@ -484,6 +494,7 @@ pub fn generate_ffi_code(api: &Api) -> Result<TokenStream, Error> {
         #![allow(non_camel_case_types)]
         #![allow(non_snake_case)]
         #![allow(unused_parens)]
+        use std::mem::size_of;
         use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
         use std::ptr::null_mut;
 

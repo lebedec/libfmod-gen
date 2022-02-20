@@ -155,6 +155,7 @@ dependencies = [
  "pest",
  "pest_derive",
  "quote",
+ "regex",
  "rustfmt-wrapper",
  "serde",
  "serde_json",

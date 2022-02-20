@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Debug, PartialEq)]
 pub enum Error {
@@ -10,6 +11,7 @@ pub enum Error {
     ParseFloat(String),
     LexError(String),
     Io(String),
+    HtmlParser(String),
 }
 
 impl From<serde_json::Error> for Error {
@@ -140,6 +142,12 @@ pub struct Preset {
     pub values: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum ParameterModifier {
+    Output,
+    Optional,
+}
+
 #[derive(Debug, Default)]
 pub struct Api {
     pub opaque_types: Vec<OpaqueType>,
@@ -152,4 +160,5 @@ pub struct Api {
     pub functions: Vec<(String, Vec<Function>)>,
     pub presets: Vec<Preset>,
     pub errors: ErrorStringMapping,
+    pub modifiers: HashMap<String, ParameterModifier>,
 }

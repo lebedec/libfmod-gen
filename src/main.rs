@@ -12,7 +12,7 @@ extern crate pest_derive;
 use crate::generators::{ffi, lib};
 use crate::models::{Api, Error, OpaqueType};
 use crate::parsers::{
-    fmod, fmod_codec, fmod_common, fmod_dsp, fmod_dsp_effects, fmod_errors, fmod_output,
+    fmod, fmod_codec, fmod_common, fmod_docs, fmod_dsp, fmod_dsp_effects, fmod_errors, fmod_output,
     fmod_studio, fmod_studio_common,
 };
 use std::fs;
@@ -97,6 +97,31 @@ fn generate_lib_fmod(source: &str) -> Result<(), Error> {
         name: "FMOD_STUDIO_SYSTEM".into(),
     });
 
+    api.modifiers = fmod_docs::parse_parameter_modifiers(&[
+        source.join("doc/FMOD API User Manual/core-api-system.html"),
+        source.join("doc/FMOD API User Manual/core-api-soundgroup.html"),
+        source.join("doc/FMOD API User Manual/core-api-sound.html"),
+        source.join("doc/FMOD API User Manual/core-api-reverb3d.html"),
+        source.join("doc/FMOD API User Manual/core-api-geometry.html"),
+        source.join("doc/FMOD API User Manual/core-api-dspconnection.html"),
+        source.join("doc/FMOD API User Manual/core-api-dsp.html"),
+        source.join("doc/FMOD API User Manual/core-api-channelgroup.html"),
+        source.join("doc/FMOD API User Manual/core-api-channelcontrol.html"),
+        source.join("doc/FMOD API User Manual/core-api-channel.html"),
+        source.join("doc/FMOD API User Manual/core-api-common.html"),
+        source.join("doc/FMOD API User Manual/plugin-api-codec.html"),
+        source.join("doc/FMOD API User Manual/plugin-api-dsp.html"),
+        source.join("doc/FMOD API User Manual/plugin-api-output.html"),
+        source.join("doc/FMOD API User Manual/studio-api-bank.html"),
+        source.join("doc/FMOD API User Manual/studio-api-bus.html"),
+        source.join("doc/FMOD API User Manual/studio-api-commandreplay.html"),
+        source.join("doc/FMOD API User Manual/studio-api-common.html"),
+        source.join("doc/FMOD API User Manual/studio-api-eventdescription.html"),
+        source.join("doc/FMOD API User Manual/studio-api-eventinstance.html"),
+        source.join("doc/FMOD API User Manual/studio-api-system.html"),
+        source.join("doc/FMOD API User Manual/studio-api-vca.html"),
+    ])?;
+
     println!("FMOD API");
     println!("Opaque Types: {}", api.opaque_types.len());
     println!("Type Aliases: {}", api.type_aliases.len());
@@ -105,7 +130,14 @@ fn generate_lib_fmod(source: &str) -> Result<(), Error> {
     println!("Flags: {}", api.flags.len());
     println!("Enumerations: {}", api.enumerations.len());
     println!("Callbacks: {}", api.callbacks.len());
-    println!("Functions: {}", api.functions.len());
+    println!(
+        "Functions: {}",
+        api.functions
+            .iter()
+            .flat_map(|(_, functions)| functions)
+            .count()
+    );
+    println!("Parameter Modifiers: {}", api.modifiers.len());
     println!("Errors: {}", api.errors.errors.len());
 
     let code = ffi::generate(&api)?;

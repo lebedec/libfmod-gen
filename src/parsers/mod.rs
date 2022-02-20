@@ -1,6 +1,7 @@
 pub mod fmod;
 pub mod fmod_codec;
 pub mod fmod_common;
+pub mod fmod_docs;
 pub mod fmod_dsp;
 pub mod fmod_dsp_effects;
 pub mod fmod_errors;
