@@ -262,6 +262,9 @@ pub fn generate_field_default(owner: &str, field: &Field) -> Result<TokenStream,
         ("FMOD_ADVANCEDSETTINGS", "cbSize") => {
             quote! { size_of::<FMOD_ADVANCEDSETTINGS>() as i32 }
         }
+        ("FMOD_CREATESOUNDEXINFO", "cbsize") => {
+            quote! { size_of::<FMOD_CREATESOUNDEXINFO>() as i32 }
+        }
         _ => match &field.field_type {
             FundamentalType(name) => match (ptr, &name[..]) {
                 ("*mut", _) => quote! { null_mut() },

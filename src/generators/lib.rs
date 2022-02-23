@@ -6,7 +6,7 @@ use crate::models::{
     Api, Argument, Enumeration, Error, Field, Function, ParameterModifier, Pointer, Structure, Type,
 };
 use convert_case::{Case, Casing};
-use quote::__private::{Ident, TokenStream};
+use quote::__private::{Ident, Literal, TokenStream};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::str::FromStr;
 
@@ -67,9 +67,11 @@ fn format_enumerator_ident(enumeration: &str, name: &str) -> Ident {
 }
 
 fn extract_method_name(name: &str) -> String {
-    let name = name.replace("3D", "3d");
     match name.rfind('_') {
-        Some(index) => name[index..].to_string().to_case(Case::Snake),
+        Some(index) => name[index..]
+            .to_string()
+            .to_case(Case::Snake)
+            .replace("3_d", "3d"),
         None => name.to_string(),
     }
 }
@@ -90,6 +92,7 @@ fn format_struct_ident(key: &str) -> Ident {
 }
 
 pub fn format_argument_ident(name: &str) -> Ident {
+    let name = name.replace("3D", "-3d-");
     let name = name.to_case(Case::Snake);
     if KEYWORDS.contains(&&*name) {
         format_ident!("{}_", name)
@@ -471,6 +474,9 @@ pub fn generate_structure_code(structure: &Structure, api: &Api) -> Result<Token
             }
             ("FMOD_STUDIO_ADVANCEDSETTINGS", "cbsize") => into_map
                 .push(quote! { cbsize: size_of::<ffi::FMOD_STUDIO_ADVANCEDSETTINGS>() as i32 }),
+            ("FMOD_CREATESOUNDEXINFO", "cbsize") => {
+                into_map.push(quote! { cbsize: size_of::<ffi::FMOD_CREATESOUNDEXINFO>() as i32 })
+            }
             _ => {
                 fields.push(generate_field_code(field, api)?);
                 from_map.push(generate_field_from_code(&structure.name, field, api)?);
@@ -495,6 +501,22 @@ pub fn generate_structure_code(structure: &Structure, api: &Api) -> Result<Token
         Some(quote! {Debug,})
     };
 
+    let mut presets = vec![];
+    if structure.name == "FMOD_REVERB_PROPERTIES" {
+        for preset in &api.presets {
+            let ident = format_ident!("{}", preset.name);
+            let preset = preset.name.replace("FMOD_PRESET_", "").to_lowercase();
+            let preset = format_ident!("{}", preset);
+            let preset = quote! {
+                #[inline]
+                pub fn #preset() -> Self {
+                    Self::from(ffi::#ident).unwrap()
+                }
+            };
+            presets.push(preset);
+        }
+    }
+
     Ok(quote! {
         #[derive(#debug Clone)]
         pub struct #name {
@@ -514,6 +536,7 @@ pub fn generate_structure_code(structure: &Structure, api: &Api) -> Result<Token
                     #(#into_map),*
                 }
             }
+            #(#presets)*
         }
     })
 }
@@ -872,10 +895,7 @@ pub fn generate_method_code(owner: &str, function: &Function, api: &Api) -> Toke
         _ => quote! { (#(#outputs),*) },
     };
 
-    let method = format_ident!(
-        "{}",
-        extract_method_name(&function.name).to_case(Case::Snake)
-    );
+    let method = format_ident!("{}", extract_method_name(&function.name));
     let function_name = &function.name;
     let function = format_ident!("{}", function_name);
 
