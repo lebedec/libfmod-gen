@@ -1,16 +1,16 @@
-use crate::ffi;
-use crate::ffi::describe_ffi_pointer;
-use crate::models::Pointer::DoublePointer;
-use crate::models::Type::{FundamentalType, UserType};
-use crate::models::{
-    Api, Argument, Enumeration, Error, Field, Function, ParameterModifier, Pointer, Structure, Type,
-};
-use convert_case::{Case, Casing};
-use quote::__private::{Ident, Literal, TokenStream};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use std::str::FromStr;
 
+use convert_case::{Case, Casing};
+use quote::__private::{Ident, TokenStream};
+
+use crate::ffi;
+use crate::ffi::describe_ffi_pointer;
 use crate::generators::dictionary::{KEYWORDS, RENAMES};
+use crate::models::Type::{FundamentalType, UserType};
+use crate::models::{
+    Api, Enumeration, Error, Field, Function, ParameterModifier, Pointer, Structure, Type,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Struct {
@@ -101,22 +101,6 @@ pub fn format_argument_ident(name: &str) -> Ident {
     }
 }
 
-pub fn is_normal(pointer: &Option<Pointer>) -> bool {
-    if let Some(Pointer::NormalPointer(_)) = pointer {
-        true
-    } else {
-        false
-    }
-}
-
-pub fn is_double(pointer: &Option<Pointer>) -> bool {
-    if let Some(Pointer::DoublePointer(_)) = pointer {
-        true
-    } else {
-        false
-    }
-}
-
 pub fn format_rust_type(
     c_type: &Type,
     as_const: &Option<String>,
@@ -161,8 +145,8 @@ pub fn format_rust_type(
                 quote! { #name }
             }
             ("*mut *mut", UserTypeDesc::Structure) => {
-                let name = format_ident!("{}", name);
-                quote! { Vec<ffi::#name> }
+                let name = format_struct_ident(name);
+                quote! { Vec<#name> }
             }
             ("*mut", UserTypeDesc::Flags) => {
                 let name = format_ident!("{}", name);
@@ -195,25 +179,6 @@ pub fn format_rust_type(
             }
         }
     }
-}
-
-pub fn generate_argument_code(argument: &Argument, api: &Api) -> TokenStream {
-    let name = format_argument_ident(&argument.name);
-    let argument_type = format_rust_type(
-        &argument.argument_type,
-        &argument.as_const,
-        &argument.pointer,
-        &None,
-        &api,
-    );
-    quote! {
-        #name: #argument_type
-    }
-}
-
-pub fn generate_argument_map_code(argument: &Argument) -> TokenStream {
-    let name = format_argument_ident(&argument.name);
-    quote! { #name }
 }
 
 pub fn generate_enumeration_code(enumeration: &Enumeration) -> TokenStream {
@@ -341,7 +306,7 @@ pub fn generate_field_from_code(
             quote! { value.spectrum.map(|ptr| to_vec!(ptr, value.numchannels)) }
         }
         ("FMOD_DSP_DESCRIPTION", "paramdesc") => {
-            quote! { vec![] } // TODO
+            quote! { to_vec!(*value.paramdesc, value.numparameters, DspParameterDesc::from)? }
         }
         ("FMOD_DSP_STATE", "sidechaindata") => {
             quote! { to_vec!(value.sidechaindata, value.sidechainchannels) }
@@ -427,7 +392,7 @@ pub fn generate_field_into_code(
             quote! { self.spectrum.map(|val| val.as_ptr() as *mut _) }
         }
         ("FMOD_DSP_DESCRIPTION", "paramdesc") => {
-            quote! { null_mut() } // TODO
+            quote! { &mut vec_as_mut_ptr(self.paramdesc, |param| param.into()) }
         }
         ("FMOD_DSP_STATE", "sidechaindata") => {
             quote! { self.sidechaindata.as_ptr() as *mut _ }
@@ -477,6 +442,9 @@ pub fn generate_structure_code(structure: &Structure, api: &Api) -> Result<Token
             ("FMOD_CREATESOUNDEXINFO", "cbsize") => {
                 into_map.push(quote! { cbsize: size_of::<ffi::FMOD_CREATESOUNDEXINFO>() as i32 })
             }
+            ("FMOD_DSP_DESCRIPTION", "numparameters") => {
+                into_map.push(quote! { numparameters: self.paramdesc.len() as i32 })
+            }
             _ => {
                 fields.push(generate_field_code(field, api)?);
                 from_map.push(generate_field_from_code(&structure.name, field, api)?);
@@ -485,13 +453,13 @@ pub fn generate_structure_code(structure: &Structure, api: &Api) -> Result<Token
         }
     }
 
-    if let Some(union) = &structure.union {
-        let name = format_ident!("{}__union", structure.name);
+    if structure.union.is_some() {
+        let name = format_ident!("{}_UNION", structure.name);
         fields.push(quote! {
-            pub __union: ffi::#name
+            pub union: ffi::#name
         });
-        from_map.push(quote! { __union: value.__union });
-        into_map.push(quote! { __union: self.__union });
+        from_map.push(quote! { union: value.union });
+        into_map.push(quote! { union: self.union });
     }
 
     let debug = if structure.union.is_some() || ["FMOD_DSP_DESCRIPTION"].contains(&&*structure.name)
@@ -583,6 +551,78 @@ pub fn generate_method_code(owner: &str, function: &Function, api: &Api) -> Toke
             continue;
         }
 
+        // FMOD_Sound_Set3DCustomRolloff
+        if function.name == "FMOD_Sound_Set3DCustomRolloff" && argument.name == "numpoints" {
+            inits.push(quote! { let numpoints = points.len() as i32; });
+            inputs.push(quote! { numpoints });
+            continue;
+        }
+        if function.name == "FMOD_Sound_Set3DCustomRolloff" && argument.name == "points" {
+            arguments.push(quote! { points: Vec<Vector> });
+            inputs.push(quote! { vec_as_mut_ptr(points, |point| point.into()) });
+            continue;
+        }
+        if function.name == "FMOD_Sound_Get3DCustomRolloff" && argument.name == "numpoints" {
+            inits.push(quote! { let mut numpoints = i32::default(); });
+            inputs.push(quote! { &mut numpoints });
+            continue;
+        }
+        if function.name == "FMOD_Sound_Get3DCustomRolloff" && argument.name == "points" {
+            inits.push(quote! { let mut points = null_mut(); });
+            inputs.push(quote! { &mut points });
+            outputs.push(quote! { to_vec!(points, numpoints, Vector::from)? });
+            return_types.push(quote! { Vec<Vector> });
+            continue;
+        }
+
+        // FMOD_Channel_Set3DCustomRolloff
+        if function.name == "FMOD_Channel_Set3DCustomRolloff" && argument.name == "numpoints" {
+            inits.push(quote! { let numpoints = points.len() as i32; });
+            inputs.push(quote! { numpoints });
+            continue;
+        }
+        if function.name == "FMOD_Channel_Set3DCustomRolloff" && argument.name == "points" {
+            arguments.push(quote! { points: Vec<Vector> });
+            inputs.push(quote! { vec_as_mut_ptr(points, |point| point.into()) });
+            continue;
+        }
+        if function.name == "FMOD_Channel_Get3DCustomRolloff" && argument.name == "numpoints" {
+            inits.push(quote! { let mut numpoints = i32::default(); });
+            inputs.push(quote! { &mut numpoints });
+            continue;
+        }
+        if function.name == "FMOD_Channel_Get3DCustomRolloff" && argument.name == "points" {
+            inits.push(quote! { let mut points = null_mut(); });
+            inputs.push(quote! { &mut points });
+            outputs.push(quote! { to_vec!(points, numpoints, Vector::from)? });
+            return_types.push(quote! { Vec<Vector> });
+            continue;
+        }
+
+        // FMOD_ChannelGroup_Set3DCustomRolloff
+        if function.name == "FMOD_ChannelGroup_Set3DCustomRolloff" && argument.name == "numpoints" {
+            inits.push(quote! { let numpoints = points.len() as i32; });
+            inputs.push(quote! { numpoints });
+            continue;
+        }
+        if function.name == "FMOD_ChannelGroup_Set3DCustomRolloff" && argument.name == "points" {
+            arguments.push(quote! { points: Vec<Vector> });
+            inputs.push(quote! { vec_as_mut_ptr(points, |point| point.into()) });
+            continue;
+        }
+        if function.name == "FMOD_ChannelGroup_Get3DCustomRolloff" && argument.name == "numpoints" {
+            inits.push(quote! { let mut numpoints = i32::default(); });
+            inputs.push(quote! { &mut numpoints });
+            continue;
+        }
+        if function.name == "FMOD_ChannelGroup_Get3DCustomRolloff" && argument.name == "points" {
+            inits.push(quote! { let mut points = null_mut(); });
+            inputs.push(quote! { &mut points });
+            outputs.push(quote! { to_vec!(points, numpoints, Vector::from)? });
+            return_types.push(quote! { Vec<Vector> });
+            continue;
+        }
+
         match api.get_modifier(&function.name, &argument.name) {
             None => {
                 let argument = match &argument.argument_type {
@@ -605,7 +645,7 @@ pub fn generate_method_code(owner: &str, function: &Function, api: &Api) -> Toke
                         },
                         "*const:char" => InArgument {
                             param: quote! { #argument_name: &str },
-                            input: quote! { #argument_name.as_ptr().cast() },
+                            input: quote! { CString::new(#argument_name)?.as_ptr() },
                         },
                         "*mut:void" => InArgument {
                             param: quote! { #argument_name: *mut c_void },
@@ -701,12 +741,12 @@ pub fn generate_method_code(owner: &str, function: &Function, api: &Api) -> Toke
                             input: quote! { #argument_name.unwrap_or(0) },
                         },
                         "*mut:float" => InArgument {
-                            param: quote! { #argument_name: Option<*mut f32> }, // TODO: array, matrix
+                            param: quote! { #argument_name: Option<*mut f32> },
                             input: quote! { #argument_name.unwrap_or(null_mut()) },
                         },
                         "*const:char" => InArgument {
                             param: quote! { #argument_name: Option<String> },
-                            input: quote! { #argument_name.map(|value| value.as_ptr().cast()).unwrap_or(null_mut()) },
+                            input: quote! { #argument_name.map(|value| CString::new(value).map(|value| value.as_ptr())).unwrap_or(Ok(null_mut()))? },
                         },
                         "*mut:void" => InArgument {
                             param: quote! { #argument_name: Option<*mut c_void> },
@@ -799,7 +839,7 @@ pub fn generate_method_code(owner: &str, function: &Function, api: &Api) -> Toke
                             retype: quote! { *mut c_void },
                         },
                         "*mut:void" => OutArgument {
-                            target: quote! { let mut #argument_name = null_mut(); },
+                            target: quote! { let #argument_name = null_mut(); },
                             source: quote! { #argument_name },
                             output: quote! { #argument_name },
                             retype: quote! { *mut c_void },
@@ -848,14 +888,14 @@ pub fn generate_method_code(owner: &str, function: &Function, api: &Api) -> Toke
                             ("*mut *mut", UserTypeDesc::Structure) => OutArgument {
                                 target: quote! { let mut #argument_name = null_mut(); },
                                 source: quote! { &mut #argument_name },
-                                output: quote! { to_vec!(#argument_name, 1, #name::from)? }, //TODO:1
-                                retype: quote! { Vec<#name> },
+                                output: quote! { #name::from(*#argument_name)? },
+                                retype: quote! { #name },
                             },
                             ("*const *const", UserTypeDesc::Structure) => OutArgument {
                                 target: quote! { let mut #argument_name = null(); },
                                 source: quote! { &mut #argument_name },
-                                output: quote! { to_vec!(#argument_name, 1, #name::from)? }, //TODO:1
-                                retype: quote! { Vec<#name> },
+                                output: quote! { #name::from(*#argument_name)? },
+                                retype: quote! { #name },
                             },
                             ("*mut", UserTypeDesc::Enumeration) => OutArgument {
                                 target: quote! { let mut #argument_name = ffi::#ident::default(); },
@@ -994,7 +1034,7 @@ impl Api {
         self.callbacks.iter().any(|callback| &callback.name == key)
     }
 
-    pub fn describe_user_type(&self, key: &str) -> UserTypeDesc {
+    fn describe_user_type(&self, key: &str) -> UserTypeDesc {
         if self.is_structure(key) {
             UserTypeDesc::Structure
         } else if self.is_enumeration(key) {
@@ -1072,7 +1112,7 @@ pub fn generate_lib_code(api: &Api) -> Result<TokenStream, Error> {
 
     Ok(quote! {
         #![allow(unused_unsafe)]
-        use std::ffi::{c_void, CStr, CString, IntoStringError};
+        use std::ffi::{c_void, CStr, CString, IntoStringError, NulError};
         use std::mem::size_of;
         use std::ptr::{null, null_mut};
         use std::slice;
@@ -1089,7 +1129,14 @@ pub fn generate_lib_code(api: &Api) -> Result<TokenStream, Error> {
                 enumeration: String,
                 value: String
             },
-            String(IntoStringError)
+            String(IntoStringError),
+            StringNul(NulError)
+        }
+
+        impl From<NulError> for Error {
+            fn from(error: NulError) -> Self {
+                Error::StringNul(error)
+            }
         }
 
         macro_rules! err_fmod {
@@ -1112,8 +1159,14 @@ pub fn generate_lib_code(api: &Api) -> Result<TokenStream, Error> {
         }
 
         macro_rules! to_string {
-            ($ptr:expr) => {
-                CString::from(CStr::from_ptr($ptr)).into_string().map_err(Error::String)
+            ($ ptr : expr) => {
+                if $ptr.is_null() {
+                    Ok(String::new())
+                } else {
+                    CString::from(CStr::from_ptr($ptr))
+                        .into_string()
+                        .map_err(Error::String)
+                }
             };
         }
 
@@ -1145,6 +1198,18 @@ pub fn generate_lib_code(api: &Api) -> Result<TokenStream, Error> {
 
         pub fn attr3d_array8(values: Vec<Attributes3d>) -> [Attributes3d; ffi::FMOD_MAX_LISTENERS as usize] {
             values.try_into().expect("slice with incorrect length")
+        }
+
+        pub fn vec_as_mut_ptr<T, O, F>(values: Vec<T>, map: F) -> *mut O
+            where F: FnMut(T) -> O
+        {
+            let mut values = values
+                .into_iter()
+                .map(map)
+                .collect::<Vec<O>>();
+            let pointer = values.as_mut_ptr();
+            std::mem::forget(values);
+            pointer
         }
 
         #(#enumerations)*

@@ -1,10 +1,10 @@
-use crate::models::{Error, ParameterModifier};
-
-use regex::Regex;
-use std::any::Any;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+
+use regex::Regex;
+
+use crate::models::{Error, ParameterModifier};
 
 pub fn parse_fragment(content: &str) -> Result<HashMap<String, ParameterModifier>, Error> {
     let mut modifiers = HashMap::new();

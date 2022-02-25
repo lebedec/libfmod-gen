@@ -1,14 +1,14 @@
+use std::num::{ParseFloatError, ParseIntError};
+use std::str::FromStr;
+
+use quote::__private::{Ident, LexError, Literal, TokenStream};
+use quote::quote;
+
+use crate::models::Type::{FundamentalType, UserType};
 use crate::models::{
     Api, Argument, Callback, Constant, Enumeration, Error, ErrorStringMapping, Field, Flags,
     Function, OpaqueType, Pointer, Preset, Structure, Type, TypeAlias,
 };
-use std::borrow::Borrow;
-
-use crate::models::Type::{FundamentalType, UserType};
-use quote::__private::{Ident, LexError, Literal, TokenStream};
-use quote::quote;
-use std::num::{ParseFloatError, ParseIntError};
-use std::str::FromStr;
 
 impl From<rustfmt_wrapper::Error> for Error {
     fn from(error: rustfmt_wrapper::Error) -> Self {
@@ -237,20 +237,6 @@ pub fn describe_ffi_pointer<'a>(
     description
 }
 
-pub fn describe_pointer<'a>(
-    as_const: &'a Option<String>,
-    pointer: &'a Option<Pointer>,
-    name: &String,
-) -> String {
-    let pointer = describe_ffi_pointer(as_const, pointer);
-    let description = if pointer.is_empty() {
-        format!("{}", name)
-    } else {
-        format!("{} {}", pointer, name)
-    };
-    description
-}
-
 pub fn generate_field_default(owner: &str, field: &Field) -> Result<TokenStream, Error> {
     let name = format_rust_ident(&field.name);
     let ptr = describe_ffi_pointer(&field.as_const, &field.pointer);
@@ -319,9 +305,9 @@ pub fn generate_structure_code(structure: &Structure) -> Result<TokenStream, Err
     let union = match &structure.union {
         None => None,
         Some(union) => {
-            let name = format_ident!("{}__union", structure.name);
+            let name = format_ident!("{}_UNION", structure.name);
             fields.push(quote! {
-                pub __union: #name
+                pub union: #name
             });
             let mut fields = vec![];
             for field in &union.fields {
@@ -536,6 +522,8 @@ pub fn generate(api: &Api) -> Result<String, Error> {
 
 #[cfg(test)]
 mod tests {
+    use quote::__private::TokenStream;
+
     use crate::ffi::{generate, Api};
     use crate::models::Pointer::DoublePointer;
     use crate::models::Type::{FundamentalType, UserType};
@@ -543,7 +531,6 @@ mod tests {
         Argument, Callback, Constant, Enumeration, Enumerator, ErrorString, ErrorStringMapping,
         Field, Flag, Flags, Function, OpaqueType, Pointer, Preset, Structure, TypeAlias, Union,
     };
-    use quote::__private::TokenStream;
 
     fn format(code: TokenStream) -> String {
         rustfmt_wrapper::rustfmt(code).unwrap()
@@ -1174,11 +1161,11 @@ mod tests {
             #[derive(Copy, Clone)]
             pub struct FMOD_DSP_PARAMETER_DESC {
                 pub type_: FMOD_DSP_PARAMETER_TYPE,
-                pub __union: FMOD_DSP_PARAMETER_DESC__union,
+                pub union: FMOD_DSP_PARAMETER_DESC_UNION,
             }
             #[repr(C)]
             #[derive(Copy, Clone)]
-            pub union FMOD_DSP_PARAMETER_DESC__union {
+            pub union FMOD_DSP_PARAMETER_DESC_UNION {
                 pub floatdesc: FMOD_DSP_PARAMETER_DESC_FLOAT,
                 pub intdesc: FMOD_DSP_PARAMETER_DESC_INT,
             }

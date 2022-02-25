@@ -1,5 +1,6 @@
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, PartialEq)]
 pub enum Error {
@@ -11,7 +12,6 @@ pub enum Error {
     ParseFloat(String),
     LexError(String),
     Io(String),
-    HtmlParser(String),
 }
 
 impl From<serde_json::Error> for Error {

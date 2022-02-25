@@ -135,6 +135,14 @@ fn generate_lib_fmod(source: &str) -> Result<(), Error> {
         api.modifiers
             .insert(key.to_string(), ParameterModifier::Output);
     }
+    let not_output = &[
+        "FMOD_System_Set3DNumListeners+numlisteners",
+        "FMOD_Channel_GetMixMatrix+inchannel_hop",
+        "FMOD_ChannelGroup_GetMixMatrix+inchannel_hop",
+    ];
+    for key in not_output {
+        api.modifiers.remove(&key.to_string());
+    }
 
     println!("FMOD API");
     println!("Opaque Types: {}", api.opaque_types.len());
