@@ -12,7 +12,16 @@ impl JsonConverter {
         JsonConverter { arrays }
     }
 
-    pub fn convert_to_value<R>(&self, pair: Pair<'_, R>) -> Value
+    pub fn convert<T, R>(&self, pair: Pair<'_, R>) -> Result<T, serde_json::Error>
+    where
+        T: DeserializeOwned,
+        R: RuleType,
+    {
+        let value = self.create_value(pair);
+        serde_json::from_value(value)
+    }
+
+    pub fn create_value<R>(&self, pair: Pair<'_, R>) -> Value
     where
         R: RuleType,
     {
@@ -23,21 +32,16 @@ impl JsonConverter {
             Value::String(data.into())
         } else {
             if self.arrays.contains(&rule) {
-                Value::Array(inner.map(|pair| self.convert_to_value(pair)).collect())
+                let values = inner.map(|pair| self.create_value(pair)).collect();
+                Value::Array(values)
             } else {
-                Value::Object(Map::from_iter(inner.map(|pair| {
-                    (format!("{:?}", pair.as_rule()), self.convert_to_value(pair))
-                })))
+                let map = inner.map(|pair| {
+                    let key = format!("{:?}", pair.as_rule());
+                    let value = self.create_value(pair);
+                    (key, value)
+                });
+                Value::Object(Map::from_iter(map))
             }
         }
-    }
-
-    pub fn convert<T, R>(&self, pair: Pair<'_, R>) -> Result<T, serde_json::Error>
-    where
-        T: DeserializeOwned,
-        R: RuleType,
-    {
-        let value = self.convert_to_value(pair);
-        serde_json::from_value(value)
     }
 }

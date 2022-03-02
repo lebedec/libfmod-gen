@@ -10,7 +10,7 @@ extern crate proc_macro;
 extern crate pest_derive;
 
 use crate::generators::{ffi, lib};
-use crate::models::{Api, Error, OpaqueType, ParameterModifier};
+use crate::models::{Api, Error, Modifier, OpaqueType};
 use crate::parsers::{
     fmod, fmod_codec, fmod_common, fmod_docs, fmod_dsp, fmod_dsp_effects, fmod_errors, fmod_output,
     fmod_studio, fmod_studio_common,
@@ -132,8 +132,7 @@ fn generate_lib_fmod(source: &str) -> Result<(), Error> {
         "FMOD_System_GetNumNestedPlugins+count",
     ];
     for key in not_specified_output {
-        api.modifiers
-            .insert(key.to_string(), ParameterModifier::Output);
+        api.modifiers.insert(key.to_string(), Modifier::Out);
     }
     let not_output = &[
         "FMOD_System_Set3DNumListeners+numlisteners",

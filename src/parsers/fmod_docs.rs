@@ -4,9 +4,9 @@ use std::path::PathBuf;
 
 use regex::Regex;
 
-use crate::models::{Error, ParameterModifier};
+use crate::models::{Error, Modifier};
 
-pub fn parse_fragment(content: &str) -> Result<HashMap<String, ParameterModifier>, Error> {
+pub fn parse_fragment(content: &str) -> Result<HashMap<String, Modifier>, Error> {
     let mut modifiers = HashMap::new();
 
     let function_pattern = Regex::new("<span class=\"nf\">(\\w+)</span>").unwrap();
@@ -33,22 +33,20 @@ pub fn parse_fragment(content: &str) -> Result<HashMap<String, ParameterModifier
             // println!("-------> {}", argument);
             for function in &functions {
                 let key = format!("{}+{}", function, argument);
-                modifiers.insert(key, ParameterModifier::Output);
+                modifiers.insert(key, Modifier::Out);
             }
         } else if let Some(captures) = optional_pattern.captures(line) {
             let argument = captures.get(1).unwrap().as_str();
             for function in &functions {
                 let key = format!("{}+{}", function, argument);
-                modifiers.insert(key, ParameterModifier::Optional);
+                modifiers.insert(key, Modifier::Opt);
             }
         }
     }
     Ok(modifiers)
 }
 
-pub fn parse_parameter_modifiers(
-    paths: &[PathBuf],
-) -> Result<HashMap<String, ParameterModifier>, Error> {
+pub fn parse_parameter_modifiers(paths: &[PathBuf]) -> Result<HashMap<String, Modifier>, Error> {
     let mut output = HashMap::new();
     for path in paths {
         let html = fs::read_to_string(path)?;

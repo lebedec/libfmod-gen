@@ -34,7 +34,7 @@ impl From<LexError> for Error {
     }
 }
 
-pub fn generate_opaque_type_code(value: &OpaqueType) -> TokenStream {
+pub fn generate_opaque_type(value: &OpaqueType) -> TokenStream {
     let name = format_ident!("{}", value.name);
 
     quote! {
@@ -46,7 +46,7 @@ pub fn generate_opaque_type_code(value: &OpaqueType) -> TokenStream {
     }
 }
 
-pub fn generate_constant_code(constant: &Constant) -> Result<TokenStream, Error> {
+pub fn generate_constant(constant: &Constant) -> Result<TokenStream, Error> {
     let name = format_ident!("{}", &constant.name);
     let value = &constant.value;
 
@@ -70,12 +70,7 @@ pub fn generate_constant_code(constant: &Constant) -> Result<TokenStream, Error>
     Ok(tokens)
 }
 
-pub fn format_rust_type(
-    c_type: &Type,
-    as_const: &Option<String>,
-    pointer: &Option<Pointer>,
-    as_array: &Option<TokenStream>,
-) -> TokenStream {
+pub fn map_c_type(c_type: &Type) -> TokenStream {
     let name = match c_type {
         FundamentalType(name) => match &name[..] {
             "char" => "c_char",
@@ -96,6 +91,16 @@ pub fn format_rust_type(
         Type::UserType(name) => name,
     };
     let name = format_ident!("{}", name);
+    quote! { #name }
+}
+
+pub fn format_rust_type(
+    c_type: &Type,
+    as_const: &Option<String>,
+    pointer: &Option<Pointer>,
+    as_array: &Option<TokenStream>,
+) -> TokenStream {
+    let name = map_c_type(c_type);
     let tokens = match (as_const, pointer) {
         (None, None) => quote! { #name },
         (None, Some(Pointer::NormalPointer(_))) => quote! { *mut #name },
@@ -114,7 +119,7 @@ pub fn format_rust_type(
     }
 }
 
-pub fn generate_type_alias_code(type_alias: &TypeAlias) -> TokenStream {
+pub fn generate_type_alias(type_alias: &TypeAlias) -> TokenStream {
     let name = format_ident!("{}", type_alias.name);
     let base = format_rust_type(&type_alias.base_type, &None, &None, &None);
 
@@ -123,7 +128,7 @@ pub fn generate_type_alias_code(type_alias: &TypeAlias) -> TokenStream {
     }
 }
 
-pub fn generate_enumeration_code(enumeration: &Enumeration) -> Result<TokenStream, Error> {
+pub fn generate_enumeration(enumeration: &Enumeration) -> Result<TokenStream, Error> {
     let name = format_ident!("{}", enumeration.name);
     let mut value: i32 = -1;
     let mut enumerators = vec![];
@@ -166,7 +171,7 @@ pub fn format_rust_ident(name: &String) -> Ident {
     }
 }
 
-pub fn generate_argument_code(argument: &Argument) -> TokenStream {
+pub fn generate_argument(argument: &Argument) -> TokenStream {
     let name = format_rust_ident(&argument.name);
     let argument_type = format_rust_type(
         &argument.argument_type,
@@ -179,13 +184,9 @@ pub fn generate_argument_code(argument: &Argument) -> TokenStream {
     }
 }
 
-pub fn generate_callback_code(callback: &Callback) -> TokenStream {
+pub fn generate_callback(callback: &Callback) -> TokenStream {
     let name = format_ident!("{}", callback.name);
-    let arguments: Vec<TokenStream> = callback
-        .arguments
-        .iter()
-        .map(generate_argument_code)
-        .collect();
+    let arguments: Vec<TokenStream> = callback.arguments.iter().map(generate_argument).collect();
 
     let varargs = if callback.varargs.is_some() {
         Some(quote! {, ...})
@@ -205,7 +206,7 @@ pub fn generate_callback_code(callback: &Callback) -> TokenStream {
     }
 }
 
-pub fn generate_flags_code(flags: &Flags) -> Result<TokenStream, Error> {
+pub fn generate_flags(flags: &Flags) -> Result<TokenStream, Error> {
     let name = format_ident!("{}", flags.name);
     let base_type = format_rust_type(&flags.flags_type, &None, &None, &None);
     let mut values = vec![];
@@ -222,10 +223,7 @@ pub fn generate_flags_code(flags: &Flags) -> Result<TokenStream, Error> {
     })
 }
 
-pub fn describe_ffi_pointer<'a>(
-    as_const: &'a Option<String>,
-    pointer: &'a Option<Pointer>,
-) -> &'a str {
+pub fn describe_pointer<'a>(as_const: &'a Option<String>, pointer: &'a Option<Pointer>) -> &'a str {
     let description = match (as_const, pointer) {
         (None, None) => "",
         (None, Some(Pointer::NormalPointer(_))) => "*mut",
@@ -239,7 +237,7 @@ pub fn describe_ffi_pointer<'a>(
 
 pub fn generate_field_default(owner: &str, field: &Field) -> Result<TokenStream, Error> {
     let name = format_rust_ident(&field.name);
-    let ptr = describe_ffi_pointer(&field.as_const, &field.pointer);
+    let ptr = describe_pointer(&field.as_const, &field.pointer);
 
     let tokens = match (owner, &field.name[..]) {
         ("FMOD_STUDIO_ADVANCEDSETTINGS", "cbsize") => {
@@ -292,7 +290,7 @@ pub fn generate_field_code(field: &Field) -> Result<TokenStream, Error> {
     })
 }
 
-pub fn generate_structure_code(structure: &Structure) -> Result<TokenStream, Error> {
+pub fn generate_structure(structure: &Structure) -> Result<TokenStream, Error> {
     let name = format_ident!("{}", structure.name);
 
     let mut fields = vec![];
@@ -363,28 +361,17 @@ pub fn generate_structure_code(structure: &Structure) -> Result<TokenStream, Err
     })
 }
 
-pub fn generate_library_code(link: &String, api: &Vec<Function>) -> TokenStream {
-    let mut functions = vec![];
-    for function in api {
-        let name = format_ident!("{}", function.name);
-        let arguments: Vec<TokenStream> = function
-            .arguments
-            .iter()
-            .map(generate_argument_code)
-            .collect();
-
-        let tokens = if &function.return_type == &FundamentalType("void".into()) {
-            quote! {
-               pub fn #name(#(#arguments),*);
-            }
-        } else {
-            let return_type = format_rust_type(&function.return_type, &None, &None, &None);
-            quote! {
-                pub fn #name(#(#arguments),*) -> #return_type;
-            }
-        };
-        functions.push(tokens);
+pub fn generate_function(function: &Function) -> TokenStream {
+    let name = format_ident!("{}", function.name);
+    let arguments = function.arguments.iter().map(generate_argument);
+    let return_type = map_c_type(&function.return_type);
+    quote! {
+        pub fn #name(#(#arguments),*) -> #return_type;
     }
+}
+
+pub fn generate_extern(link: &String, api: &Vec<Function>) -> TokenStream {
+    let functions = api.iter().map(generate_function);
     quote! {
         #[link(name = #link)]
         extern "C" {
@@ -393,7 +380,7 @@ pub fn generate_library_code(link: &String, api: &Vec<Function>) -> TokenStream 
     }
 }
 
-pub fn generate_preset_code(structure: &Structure, preset: &Preset) -> Result<TokenStream, Error> {
+pub fn generate_preset(structure: &Structure, preset: &Preset) -> Result<TokenStream, Error> {
     let name = format_ident!("{}", preset.name);
     let mut fields: Vec<TokenStream> = vec![];
     for (index, value) in preset.values.iter().enumerate() {
@@ -438,43 +425,36 @@ pub fn generate_errors_mapping_code(mapping: &ErrorStringMapping) -> TokenStream
 }
 
 pub fn generate_ffi_code(api: &Api) -> Result<TokenStream, Error> {
-    let opaque_types: Vec<TokenStream> = api
-        .opaque_types
-        .iter()
-        .map(generate_opaque_type_code)
-        .collect();
+    let opaque_types: Vec<TokenStream> =
+        api.opaque_types.iter().map(generate_opaque_type).collect();
 
     let mut constants = vec![];
     for constant in &api.constants {
-        constants.push(generate_constant_code(constant)?);
+        constants.push(generate_constant(constant)?);
     }
 
-    let type_aliases: Vec<TokenStream> = api
-        .type_aliases
-        .iter()
-        .map(generate_type_alias_code)
-        .collect();
+    let type_aliases: Vec<TokenStream> = api.type_aliases.iter().map(generate_type_alias).collect();
 
     let mut enumerations = vec![];
     for enumeration in &api.enumerations {
-        enumerations.push(generate_enumeration_code(enumeration)?);
+        enumerations.push(generate_enumeration(enumeration)?);
     }
 
-    let callbacks: Vec<TokenStream> = api.callbacks.iter().map(generate_callback_code).collect();
+    let callbacks: Vec<TokenStream> = api.callbacks.iter().map(generate_callback).collect();
 
     let mut flags = vec![];
     for flag in &api.flags {
-        flags.push(generate_flags_code(flag)?);
+        flags.push(generate_flags(flag)?);
     }
 
     let mut structures = vec![];
     for structure in &api.structures {
-        structures.push(generate_structure_code(structure)?);
+        structures.push(generate_structure(structure)?);
     }
 
     let mut libraries = vec![];
     for (link, functions) in &api.functions {
-        libraries.push(generate_library_code(link, functions));
+        libraries.push(generate_extern(link, functions));
     }
 
     let mut presets = vec![];
@@ -484,7 +464,7 @@ pub fn generate_ffi_code(api: &Api) -> Result<TokenStream, Error> {
         .find(|structure| structure.name == "FMOD_REVERB_PROPERTIES")
     {
         for preset in &api.presets {
-            presets.push(generate_preset_code(structure, preset)?);
+            presets.push(generate_preset(structure, preset)?);
         }
     }
 

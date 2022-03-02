@@ -143,9 +143,10 @@ pub struct Preset {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum ParameterModifier {
-    Output,
-    Optional,
+pub enum Modifier {
+    None,
+    Out,
+    Opt,
 }
 
 #[derive(Debug, Default)]
@@ -160,5 +161,5 @@ pub struct Api {
     pub functions: Vec<(String, Vec<Function>)>,
     pub presets: Vec<Preset>,
     pub errors: ErrorStringMapping,
-    pub modifiers: HashMap<String, ParameterModifier>,
+    pub modifiers: HashMap<String, Modifier>,
 }
