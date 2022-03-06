@@ -228,7 +228,7 @@ pub fn generate_enumeration_code(enumeration: &Enumeration) -> TokenStream {
     }
 }
 
-pub fn generate_field_code(field: &Field, api: &Api) -> Result<TokenStream, Error> {
+pub fn generate_field_code(field: &Field, api: &Api) -> TokenStream {
     let name = format_argument_ident(&field.name);
     let as_array = match &field.as_array {
         None => None,
@@ -239,7 +239,7 @@ pub fn generate_field_code(field: &Field, api: &Api) -> Result<TokenStream, Erro
                     let name = format_ident!("{}", token);
                     quote! { ffi::#name }
                 }
-                _ => TokenStream::from_str(token)?,
+                _ => TokenStream::from_str(token).expect("not implemented yet"),
             };
             Some(dimension)
         }
@@ -251,16 +251,12 @@ pub fn generate_field_code(field: &Field, api: &Api) -> Result<TokenStream, Erro
         &as_array,
         &api,
     );
-    Ok(quote! {
+    quote! {
         pub #name: #field_type
-    })
+    }
 }
 
-pub fn generate_field_from_code(
-    structure: &str,
-    field: &Field,
-    api: &Api,
-) -> Result<TokenStream, Error> {
+pub fn generate_field_from_code(structure: &str, field: &Field, api: &Api) -> TokenStream {
     let name = format_argument_ident(&field.name);
     let value_name = ffi::format_rust_ident(&field.name);
     let ptr = describe_pointer(&field.as_const, &field.pointer);
@@ -339,14 +335,10 @@ pub fn generate_field_from_code(
         },
     };
 
-    Ok(quote! {#name: #getter})
+    quote! {#name: #getter}
 }
 
-pub fn generate_field_into_code(
-    structure: &str,
-    field: &Field,
-    api: &Api,
-) -> Result<TokenStream, Error> {
+pub fn generate_field_into_code(structure: &str, field: &Field, api: &Api) -> TokenStream {
     let name = ffi::format_rust_ident(&field.name);
     let self_name = format_argument_ident(&field.name);
     let ptr = describe_pointer(&field.as_const, &field.pointer);
@@ -421,54 +413,10 @@ pub fn generate_field_into_code(
         },
     };
 
-    Ok(quote! {#name: #getter})
+    quote! {#name: #getter}
 }
 
-pub fn generate_structure_code(structure: &Structure, api: &Api) -> Result<TokenStream, Error> {
-    let structure_name = format_ident!("{}", structure.name);
-    let name = format_struct_ident(&structure.name);
-
-    let mut fields = vec![];
-    let mut from_map = vec![];
-    let mut into_map = vec![];
-
-    for field in &structure.fields {
-        match (&structure.name[..], &field.name[..]) {
-            ("FMOD_ADVANCEDSETTINGS", "cbSize") => {
-                into_map.push(quote! { cbSize: size_of::<ffi::FMOD_ADVANCEDSETTINGS>() as i32 })
-            }
-            ("FMOD_STUDIO_ADVANCEDSETTINGS", "cbsize") => into_map
-                .push(quote! { cbsize: size_of::<ffi::FMOD_STUDIO_ADVANCEDSETTINGS>() as i32 }),
-            ("FMOD_CREATESOUNDEXINFO", "cbsize") => {
-                into_map.push(quote! { cbsize: size_of::<ffi::FMOD_CREATESOUNDEXINFO>() as i32 })
-            }
-            ("FMOD_DSP_DESCRIPTION", "numparameters") => {
-                into_map.push(quote! { numparameters: self.paramdesc.len() as i32 })
-            }
-            _ => {
-                fields.push(generate_field_code(field, api)?);
-                from_map.push(generate_field_from_code(&structure.name, field, api)?);
-                into_map.push(generate_field_into_code(&structure.name, field, api)?);
-            }
-        }
-    }
-
-    if structure.union.is_some() {
-        let name = format_ident!("{}_UNION", structure.name);
-        fields.push(quote! {
-            pub union: ffi::#name
-        });
-        from_map.push(quote! { union: value.union });
-        into_map.push(quote! { union: self.union });
-    }
-
-    let debug = if structure.union.is_some() || ["FMOD_DSP_DESCRIPTION"].contains(&&*structure.name)
-    {
-        None
-    } else {
-        Some(quote! {Debug,})
-    };
-
+pub fn generate_presets(structure: &Structure, api: &Api) -> TokenStream {
     let mut presets = vec![];
     if structure.name == "FMOD_REVERB_PROPERTIES" {
         for preset in &api.presets {
@@ -484,29 +432,72 @@ pub fn generate_structure_code(structure: &Structure, api: &Api) -> Result<Token
             presets.push(preset);
         }
     }
+    quote! {
+        #(#presets)*
+    }
+}
 
-    Ok(quote! {
-        #[derive(#debug Clone)]
+pub fn generate_structure_code(structure: &Structure, api: &Api) -> TokenStream {
+    let ident = format_ident!("{}", structure.name);
+    let name = format_struct_ident(&structure.name);
+    let mut fields = vec![];
+    let mut from_map = vec![];
+    let mut into_map = vec![];
+    let mut derive = quote! { Debug, Clone };
+    for field in &structure.fields {
+        match (&structure.name[..], &field.name[..]) {
+            ("FMOD_ADVANCEDSETTINGS", "cbSize") => {
+                into_map.push(quote! { cbSize: size_of::<ffi::FMOD_ADVANCEDSETTINGS>() as i32 })
+            }
+            ("FMOD_STUDIO_ADVANCEDSETTINGS", "cbsize") => into_map
+                .push(quote! { cbsize: size_of::<ffi::FMOD_STUDIO_ADVANCEDSETTINGS>() as i32 }),
+            ("FMOD_CREATESOUNDEXINFO", "cbsize") => {
+                into_map.push(quote! { cbsize: size_of::<ffi::FMOD_CREATESOUNDEXINFO>() as i32 })
+            }
+            ("FMOD_DSP_DESCRIPTION", "numparameters") => {
+                into_map.push(quote! { numparameters: self.paramdesc.len() as i32 })
+            }
+            _ => {
+                fields.push(generate_field_code(field, api));
+                from_map.push(generate_field_from_code(&structure.name, field, api));
+                into_map.push(generate_field_into_code(&structure.name, field, api));
+            }
+        }
+    }
+    if structure.union.is_some() {
+        let name = format_ident!("{}_UNION", structure.name);
+        fields.push(quote! {
+            pub union: ffi::#name
+        });
+        from_map.push(quote! { union: value.union });
+        into_map.push(quote! { union: self.union });
+        derive = quote! { Clone };
+    }
+    if structure.name == "FMOD_DSP_DESCRIPTION" {
+        derive = quote! { Clone }
+    }
+    let presets = generate_presets(structure, api);
+    quote! {
+        #[derive(#derive)]
         pub struct #name {
             #(#fields),*
         }
-
         impl #name {
-            pub fn from(value: ffi::#structure_name) -> Result<#name, Error> {
+            pub fn from(value: ffi::#ident) -> Result<#name, Error> {
                 unsafe {
                     Ok(#name {
                         #(#from_map),*
                     })
                 }
             }
-            pub fn into(self) -> ffi::#structure_name {
-                ffi::#structure_name {
+            pub fn into(self) -> ffi::#ident {
+                ffi::#ident {
                     #(#into_map),*
                 }
             }
-            #(#presets)*
+            #presets
         }
-    })
+    }
 }
 
 struct OutArgument {
@@ -601,85 +592,86 @@ fn map_optional(argument: &Argument, api: &Api) -> InArgument {
 
 fn map_input(argument: &Argument, api: &Api) -> InArgument {
     let pointer = ffi::describe_pointer(&argument.as_const, &argument.pointer);
-    let argument_name = format_argument_ident(&argument.name);
-    match &argument.argument_type {
-        FundamentalType(name) => match &format!("{}:{}", pointer, name)[..] {
+    let argument_type = &argument.argument_type;
+    let argument = format_argument_ident(&argument.name);
+    match argument_type {
+        FundamentalType(type_name) => match &format!("{}:{}", pointer, type_name)[..] {
             ":float" => InArgument {
-                param: quote! { #argument_name: f32 },
-                input: quote! { #argument_name },
+                param: quote! { #argument: f32 },
+                input: quote! { #argument },
             },
             ":int" => InArgument {
-                param: quote! { #argument_name: i32 },
-                input: quote! { #argument_name },
+                param: quote! { #argument: i32 },
+                input: quote! { #argument },
             },
             ":unsigned int" => InArgument {
-                param: quote! { #argument_name: u32 },
-                input: quote! { #argument_name },
+                param: quote! { #argument: u32 },
+                input: quote! { #argument },
             },
             ":unsigned long long" => InArgument {
-                param: quote! { #argument_name: u64 },
-                input: quote! { #argument_name },
+                param: quote! { #argument: u64 },
+                input: quote! { #argument },
             },
             "*const:char" => InArgument {
-                param: quote! { #argument_name: &str },
-                input: quote! { CString::new(#argument_name)?.as_ptr() },
+                param: quote! { #argument: &str },
+                input: quote! { CString::new(#argument)?.as_ptr() },
             },
             "*mut:void" => InArgument {
-                param: quote! { #argument_name: *mut c_void },
-                input: quote! { #argument_name },
+                param: quote! { #argument: *mut c_void },
+                input: quote! { #argument },
             },
             "*const:void" => InArgument {
-                param: quote! { #argument_name: *const c_void },
-                input: quote! { #argument_name },
+                param: quote! { #argument: *const c_void },
+                input: quote! { #argument },
             },
             "*mut:float" => InArgument {
-                param: quote! { #argument_name: *mut f32 },
-                input: quote! { #argument_name },
+                param: quote! { #argument: *mut f32 },
+                input: quote! { #argument },
             },
             _ => unimplemented!(),
         },
-        UserType(user_type) => {
-            let name = format_struct_ident(&user_type);
-            let ident = format_ident!("{}", user_type);
-            match (pointer, api.describe_user_type(&user_type)) {
+        UserType(type_name) => {
+            let rust_type = format_struct_ident(&type_name);
+            let ident = format_ident!("{}", type_name);
+            match (pointer, api.describe_user_type(&type_name)) {
                 ("*mut", UserTypeDesc::OpaqueType) => InArgument {
-                    param: quote! { #argument_name: #name },
-                    input: quote! { #argument_name.as_mut_ptr() },
+                    param: quote! { #argument: #rust_type },
+                    input: quote! { #argument.as_mut_ptr() },
                 },
                 ("*const", UserTypeDesc::Structure) => InArgument {
-                    param: quote! { #argument_name: #name },
-                    input: quote! { &#argument_name.into() },
+                    param: quote! { #argument: #rust_type },
+                    input: quote! { &#argument.into() },
                 },
                 ("*mut", UserTypeDesc::Structure) => InArgument {
-                    param: quote! { #argument_name: #name },
-                    input: quote! { &mut #argument_name.into() },
+                    param: quote! { #argument: #rust_type },
+                    input: quote! { &mut #argument.into() },
                 },
                 ("", UserTypeDesc::Structure) => InArgument {
-                    param: quote! { #argument_name: #name },
-                    input: quote! { #argument_name.into() },
-                },
-                ("", UserTypeDesc::TypeAlias) => match &user_type[..] {
-                    "FMOD_BOOL" => InArgument {
-                        param: quote! { #argument_name: bool },
-                        input: quote! { from_bool!(#argument_name) },
-                    },
-                    "FMOD_PORT_INDEX" => InArgument {
-                        param: quote! { #argument_name: u64 },
-                        input: quote! { #argument_name },
-                    },
-                    _ => unimplemented!(),
+                    param: quote! { #argument: #rust_type },
+                    input: quote! { #argument.into() },
                 },
                 ("", UserTypeDesc::Flags) => InArgument {
-                    param: quote! { #argument_name: ffi::#ident },
-                    input: quote! { #argument_name },
+                    param: quote! { #argument: ffi::#ident },
+                    input: quote! { #argument },
                 },
                 ("", UserTypeDesc::Enumeration) => InArgument {
-                    param: quote! { #argument_name: #name },
-                    input: quote! { #argument_name.into() },
+                    param: quote! { #argument: #rust_type },
+                    input: quote! { #argument.into() },
                 },
                 ("", UserTypeDesc::Callback) => InArgument {
-                    param: quote! { #argument_name: ffi::#ident },
-                    input: quote! { #argument_name },
+                    param: quote! { #argument: ffi::#ident },
+                    input: quote! { #argument },
+                },
+                ("", UserTypeDesc::TypeAlias) => match &type_name[..] {
+                    "FMOD_BOOL" => InArgument {
+                        param: quote! { #argument: bool },
+                        input: quote! { from_bool!(#argument) },
+                    },
+                    "FMOD_PORT_INDEX" => InArgument {
+                        param: quote! { #argument: u64 },
+                        input: quote! { #argument },
+                    },
+                    _ => unimplemented!(),
                 },
                 _ => unimplemented!(),
             }
@@ -692,12 +684,6 @@ fn map_output(argument: &Argument, api: &Api) -> OutArgument {
     let arg = format_argument_ident(&argument.name);
     match &argument.argument_type {
         FundamentalType(type_name) => match &format!("{}:{}", pointer, type_name)[..] {
-            ":int" => OutArgument {
-                target: quote! { let mut #arg = i32::default(); },
-                source: quote! { #arg },
-                output: quote! { #arg },
-                retype: quote! { i32 },
-            },
             "*mut:char" => OutArgument {
                 target: quote! { let #arg = CString::from_vec_unchecked(b"".to_vec()).into_raw(); },
                 source: quote! { #arg },
@@ -1163,7 +1149,7 @@ pub fn generate_lib_code(api: &Api) -> Result<TokenStream, Error> {
 
     let mut structures: Vec<TokenStream> = vec![];
     for structure in &api.structures {
-        structures.push(generate_structure_code(structure, api)?);
+        structures.push(generate_structure_code(structure, api));
     }
 
     Ok(quote! {

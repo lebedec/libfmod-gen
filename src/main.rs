@@ -146,16 +146,39 @@ fn generate_lib_fmod(source: &str) -> Result<(), Error> {
     println!("FMOD API");
     println!("Opaque Types: {}", api.opaque_types.len());
     println!("Type Aliases: {}", api.type_aliases.len());
-    println!("Structures: {}", api.structures.len());
+    println!(
+        "Structures: {} (Fields: {})",
+        api.structures.len(),
+        api.structures
+            .iter()
+            .flat_map(|structure| &structure.fields)
+            .count()
+    );
     println!("Constants: {}", api.constants.len());
-    println!("Flags: {}", api.flags.len());
-    println!("Enumerations: {}", api.enumerations.len());
+    println!(
+        "Flags: {} (Options: {})",
+        api.flags.len(),
+        api.flags.iter().flat_map(|flags| &flags.flags).count()
+    );
+    println!(
+        "Enumerations: {} (Variants: {})",
+        api.enumerations.len(),
+        api.enumerations
+            .iter()
+            .flat_map(|enumeration| &enumeration.enumerators)
+            .count()
+    );
     println!("Callbacks: {}", api.callbacks.len());
     println!(
-        "Functions: {}",
+        "Functions: {} (Arguments: {})",
         api.functions
             .iter()
             .flat_map(|(_, functions)| functions)
+            .count(),
+        api.functions
+            .iter()
+            .flat_map(|(_, functions)| functions)
+            .flat_map(|function| &function.arguments)
             .count()
     );
     println!("Parameter Modifiers: {}", api.modifiers.len());

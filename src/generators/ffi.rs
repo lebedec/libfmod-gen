@@ -7,7 +7,7 @@ use quote::quote;
 use crate::models::Type::{FundamentalType, UserType};
 use crate::models::{
     Api, Argument, Callback, Constant, Enumeration, Error, ErrorStringMapping, Field, Flags,
-    Function, OpaqueType, Pointer, Preset, Structure, Type, TypeAlias,
+    Function, OpaqueType, Pointer, Preset, Structure, Type, TypeAlias, Union,
 };
 
 impl From<rustfmt_wrapper::Error> for Error {
@@ -72,26 +72,25 @@ pub fn generate_constant(constant: &Constant) -> Result<TokenStream, Error> {
 
 pub fn map_c_type(c_type: &Type) -> TokenStream {
     let name = match c_type {
-        FundamentalType(name) => match &name[..] {
-            "char" => "c_char",
-            "unsigned char" => "c_uchar",
-            "signed char" => "c_char",
-            "int" => "c_int",
-            "unsigned int" => "c_uint",
-            "short" => "c_short",
-            "unsigned short" => "c_ushort",
-            "long long" => "c_longlong",
-            "long" => "c_long",
-            "unsigned long long" => "c_ulonglong",
-            "unsigned long" => "c_ulong",
-            "float" => "c_float",
-            "void" => "c_void",
-            _ => name,
-        },
-        Type::UserType(name) => name,
+        FundamentalType(name) => {
+            let name = name.replace("unsigned", "u").replace(" ", "");
+            format_ident!("c_{}", name)
+        }
+        Type::UserType(name) => format_ident!("{}", name),
     };
-    let name = format_ident!("{}", name);
     quote! { #name }
+}
+
+pub fn describe_pointer<'a>(as_const: &'a Option<String>, pointer: &'a Option<Pointer>) -> &'a str {
+    let description = match (as_const, pointer) {
+        (None, None) => "",
+        (None, Some(Pointer::NormalPointer(_))) => "*mut",
+        (None, Some(Pointer::DoublePointer(_))) => "*mut *mut",
+        (Some(_), Some(Pointer::NormalPointer(_))) => "*const",
+        (Some(_), Some(Pointer::DoublePointer(_))) => "*const *const",
+        (Some(_), None) => "",
+    };
+    description
 }
 
 pub fn format_rust_type(
@@ -101,21 +100,12 @@ pub fn format_rust_type(
     as_array: &Option<TokenStream>,
 ) -> TokenStream {
     let name = map_c_type(c_type);
-    let tokens = match (as_const, pointer) {
-        (None, None) => quote! { #name },
-        (None, Some(Pointer::NormalPointer(_))) => quote! { *mut #name },
-        (None, Some(Pointer::DoublePointer(_))) => quote! { *mut *mut #name },
-        (Some(_), Some(Pointer::NormalPointer(_))) => quote! { *const #name },
-        (Some(_), Some(Pointer::DoublePointer(_))) => quote! { *const *const #name },
-        (Some(_), None) => quote! { #name },
-    };
+    let pointer = describe_pointer(as_const, pointer);
+    let pointer = TokenStream::from_str(pointer).expect("not implemented yet");
+    let rust_type = quote! { #pointer #name };
     match as_array {
-        None => tokens,
-        Some(dimension) => {
-            quote! {
-                [#tokens; #dimension as usize]
-            }
-        }
+        Some(dimension) => quote! { [#rust_type; #dimension as usize] },
+        None => rust_type,
     }
 }
 
@@ -184,31 +174,47 @@ pub fn generate_argument(argument: &Argument) -> TokenStream {
     }
 }
 
+impl Type {
+    pub fn is_void(&self) -> bool {
+        self == &FundamentalType("void".into())
+    }
+}
+
+impl Callback {
+    pub fn returns(&self) -> Option<TokenStream> {
+        if !(self.return_type.is_void() && self.pointer.is_none()) {
+            let return_type = format_rust_type(&self.return_type, &None, &self.pointer, &None);
+            Some(return_type)
+        } else {
+            None
+        }
+    }
+}
+
 pub fn generate_callback(callback: &Callback) -> TokenStream {
     let name = format_ident!("{}", callback.name);
-    let arguments: Vec<TokenStream> = callback.arguments.iter().map(generate_argument).collect();
-
+    let arguments = callback.arguments.iter().map(generate_argument);
     let varargs = if callback.varargs.is_some() {
         Some(quote! {, ...})
     } else {
         None
     };
-
-    if &callback.return_type == &FundamentalType("void".into()) && callback.pointer.is_none() {
-        quote! {
-            pub type #name = Option<unsafe extern "C" fn(#(#arguments),* #varargs)>;
-        }
+    let return_type = if let Some(return_type) = callback.returns() {
+        Some(quote! { -> #return_type })
     } else {
-        let return_type = format_rust_type(&callback.return_type, &None, &callback.pointer, &None);
-        quote! {
-            pub type #name = Option<unsafe extern "C" fn(#(#arguments),* #varargs) -> #return_type>;
-        }
+        None
+    };
+
+    quote! {
+        pub type #name = Option<
+            unsafe extern "C" fn(#(#arguments),* #varargs) #return_type
+        >;
     }
 }
 
 pub fn generate_flags(flags: &Flags) -> Result<TokenStream, Error> {
     let name = format_ident!("{}", flags.name);
-    let base_type = format_rust_type(&flags.flags_type, &None, &None, &None);
+    let base_type = map_c_type(&flags.flags_type);
     let mut values = vec![];
     for flag in &flags.flags {
         let value = TokenStream::from_str(&flag.value)?;
@@ -223,23 +229,17 @@ pub fn generate_flags(flags: &Flags) -> Result<TokenStream, Error> {
     })
 }
 
-pub fn describe_pointer<'a>(as_const: &'a Option<String>, pointer: &'a Option<Pointer>) -> &'a str {
-    let description = match (as_const, pointer) {
-        (None, None) => "",
-        (None, Some(Pointer::NormalPointer(_))) => "*mut",
-        (None, Some(Pointer::DoublePointer(_))) => "*mut *mut",
-        (Some(_), Some(Pointer::NormalPointer(_))) => "*const",
-        (Some(_), Some(Pointer::DoublePointer(_))) => "*const *const",
-        (Some(_), None) => "",
-    };
-    description
-}
-
-pub fn generate_field_default(owner: &str, field: &Field) -> Result<TokenStream, Error> {
+pub fn generate_field_default(owner: &str, field: &Field) -> TokenStream {
     let name = format_rust_ident(&field.name);
     let ptr = describe_pointer(&field.as_const, &field.pointer);
 
-    let tokens = match (owner, &field.name[..]) {
+    let value = match (owner, &field.name[..]) {
+        ("FMOD_DSP_LOUDNESS_METER_INFO_TYPE", "loudnesshistogram") => {
+            quote! { [0.0; FMOD_DSP_LOUDNESS_METER_HISTOGRAM_SAMPLES as usize] }
+        }
+        ("FMOD_DSP_PARAMETER_FFT", "spectrum") => {
+            quote! { [null_mut(); 32] }
+        }
         ("FMOD_STUDIO_ADVANCEDSETTINGS", "cbsize") => {
             quote! { size_of::<FMOD_STUDIO_ADVANCEDSETTINGS>() as i32 }
         }
@@ -265,100 +265,109 @@ pub fn generate_field_default(owner: &str, field: &Field) -> Result<TokenStream,
         },
     };
 
-    Ok(quote! {
-        #name: #tokens
-    })
+    quote! {
+        #name: #value
+    }
 }
 
-pub fn generate_field_code(field: &Field) -> Result<TokenStream, Error> {
-    let name = format_rust_ident(&field.name);
-    let as_array = match &field.as_array {
-        None => None,
-        Some(dimension) => {
-            let dimension = TokenStream::from_str(&dimension[1..dimension.len() - 1])?;
-            Some(dimension)
+impl Field {
+    pub fn array(&self) -> Option<TokenStream> {
+        match &self.as_array {
+            None => None,
+            Some(repr) => Some(
+                TokenStream::from_str(&repr[1..repr.len() - 1]).expect("unexpected array repr"),
+            ),
         }
-    };
+    }
+}
+
+pub fn generate_field(field: &Field) -> TokenStream {
+    let name = format_rust_ident(&field.name);
     let field_type = format_rust_type(
         &field.field_type,
         &field.as_const,
         &field.pointer,
-        &as_array,
+        &field.array(),
     );
-    Ok(quote! {
+    quote! {
         pub #name: #field_type
-    })
+    }
 }
 
-pub fn generate_structure(structure: &Structure) -> Result<TokenStream, Error> {
+pub fn generate_structure_default(structure: &Structure) -> TokenStream {
     let name = format_ident!("{}", structure.name);
+    let defaults = structure
+        .fields
+        .iter()
+        .map(|field| generate_field_default(&structure.name, field));
 
-    let mut fields = vec![];
-    let mut defaults = vec![];
-    for field in &structure.fields {
-        fields.push(generate_field_code(field)?);
-        defaults.push(generate_field_default(&structure.name, field)?);
-    }
-
-    let union = match &structure.union {
-        None => None,
-        Some(union) => {
-            let name = format_ident!("{}_UNION", structure.name);
-            fields.push(quote! {
-                pub union: #name
-            });
-            let mut fields = vec![];
-            for field in &union.fields {
-                fields.push(generate_field_code(field)?);
+    let union_default = if structure.union.is_some() {
+        match &structure.name[..] {
+            "FMOD_STUDIO_USER_PROPERTY" => {
+                Some(quote! { ,union: FMOD_STUDIO_USER_PROPERTY_UNION { intvalue: 0 } })
             }
-            Some(quote! {
-                #[repr(C)]
-                #[derive(Copy, Clone)]
-                pub union #name {
-                    #(#fields),*
-                }
-            })
+            "FMOD_DSP_PARAMETER_DESC" => Some(
+                quote! { ,union: FMOD_DSP_PARAMETER_DESC_UNION {floatdesc: Default::default()} },
+            ),
+            _ => None,
         }
-    };
-
-    let debug = if structure.union.is_some() {
+    } else {
         None
-    } else {
-        Some(quote! {Debug,})
     };
 
-    let unimplemented = vec![
-        "FMOD_STUDIO_USER_PROPERTY",
-        "FMOD_DSP_PARAMETER_DESC",
-        "FMOD_DSP_LOUDNESS_METER_INFO_TYPE",
-        "FMOD_DSP_PARAMETER_FFT",
-    ];
-
-    let default = if unimplemented.contains(&&*structure.name) {
-        quote! {
-            unimplemented!()
-        }
-    } else {
-        quote! {
-            Self {
-                #(#defaults),*
-            }
-        }
-    };
-
-    Ok(quote! {
-        #[repr(C)]
-        #[derive(#debug Copy, Clone)]
-        pub struct #name {
-            #(#fields),*
-        }
-        #union
+    quote! {
         impl Default for #name {
             fn default() -> Self {
+                Self {
+                    #(#defaults),*
+                    #union_default
+                }
+            }
+        }
+    }
+}
+
+pub fn generate_structure_union(name: &Ident, union: &Union) -> TokenStream {
+    let fields = union.fields.iter().map(generate_field);
+    quote! {
+        #[repr(C)]
+        #[derive(Copy, Clone)]
+        pub union #name {
+            #(#fields),*
+        }
+    }
+}
+
+pub fn generate_structure(structure: &Structure) -> TokenStream {
+    let name = format_ident!("{}", structure.name);
+    let fields = structure.fields.iter().map(generate_field);
+    let default = generate_structure_default(&structure);
+    match &structure.union {
+        None => {
+            quote! {
+                #[repr(C)]
+                #[derive(Debug, Copy, Clone)]
+                pub struct #name {
+                    #(#fields),*
+                }
                 #default
             }
         }
-    })
+        Some(union) => {
+            let union_name = format_ident!("{}_UNION", structure.name);
+            let union = generate_structure_union(&union_name, union);
+            quote! {
+                #[repr(C)]
+                #[derive(Copy, Clone)]
+                pub struct #name {
+                    #(#fields),*,
+                    pub union: #union_name
+                }
+                #default
+                #union
+            }
+        }
+    }
 }
 
 pub fn generate_function(function: &Function) -> TokenStream {
@@ -449,7 +458,7 @@ pub fn generate_ffi_code(api: &Api) -> Result<TokenStream, Error> {
 
     let mut structures = vec![];
     for structure in &api.structures {
-        structures.push(generate_structure(structure)?);
+        structures.push(generate_structure(structure));
     }
 
     let mut libraries = vec![];
