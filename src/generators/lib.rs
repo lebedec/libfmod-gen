@@ -228,7 +228,23 @@ pub fn generate_enumeration_code(enumeration: &Enumeration) -> TokenStream {
     }
 }
 
-pub fn generate_field_code(field: &Field, api: &Api) -> TokenStream {
+pub fn generate_field(structure: &Structure, field: &Field, api: &Api) -> TokenStream {
+    match (&structure.name[..], &field.name[..]) {
+        ("FMOD_ADVANCEDSETTINGS", "cbSize") => {
+            return quote! {};
+        }
+        ("FMOD_STUDIO_ADVANCEDSETTINGS", "cbsize") => {
+            return quote! {};
+        }
+        ("FMOD_CREATESOUNDEXINFO", "cbsize") => {
+            return quote! {};
+        }
+        ("FMOD_DSP_DESCRIPTION", "numparameters") => {
+            return quote! {};
+        }
+        _ => {}
+    }
+
     let name = format_argument_ident(&field.name);
     let as_array = match &field.as_array {
         None => None,
@@ -256,14 +272,14 @@ pub fn generate_field_code(field: &Field, api: &Api) -> TokenStream {
     }
 }
 
-pub fn generate_field_from_code(structure: &str, field: &Field, api: &Api) -> TokenStream {
+pub fn generate_field_from(structure: &str, field: &Field, api: &Api) -> TokenStream {
     let name = format_argument_ident(&field.name);
     let value_name = ffi::format_rust_ident(&field.name);
     let ptr = describe_pointer(&field.as_const, &field.pointer);
 
     let getter = match (structure, &field.name[..]) {
         ("FMOD_DSP_PARAMETER_3DATTRIBUTES_MULTI", "relative") => {
-            quote! { attr3d_array8(value.relative.map(Attributes3d::from).into_iter().collect::<Result<Vec<Attributes3d>, Error>>()?) }
+            quote! { attr3d_array8(value.relative.map(Attributes3d::try_from).into_iter().collect::<Result<Vec<Attributes3d>, Error>>()?) }
         }
         ("FMOD_CREATESOUNDEXINFO", "inclusionlist") => {
             quote! { to_vec!(value.inclusionlist, value.inclusionlistnum) }
@@ -302,7 +318,7 @@ pub fn generate_field_from_code(structure: &str, field: &Field, api: &Api) -> To
             quote! { value.spectrum.map(|ptr| to_vec!(ptr, value.numchannels)) }
         }
         ("FMOD_DSP_DESCRIPTION", "paramdesc") => {
-            quote! { to_vec!(*value.paramdesc, value.numparameters, DspParameterDesc::from)? }
+            quote! { to_vec!(*value.paramdesc, value.numparameters, DspParameterDesc::try_from)? }
         }
         ("FMOD_DSP_STATE", "sidechaindata") => {
             quote! { to_vec!(value.sidechaindata, value.sidechainchannels) }
@@ -320,11 +336,11 @@ pub fn generate_field_from_code(structure: &str, field: &Field, api: &Api) -> To
                 }
                 ("*mut", UserTypeDesc::Structure) => {
                     let name = format_struct_ident(name);
-                    quote! { #name::from(*value.#value_name)? }
+                    quote! { #name::try_from(*value.#value_name)? }
                 }
                 ("", UserTypeDesc::Structure) => {
                     let name = format_struct_ident(name);
-                    quote! { #name::from(value.#value_name)? }
+                    quote! { #name::try_from(value.#value_name)? }
                 }
                 ("", UserTypeDesc::Enumeration) => {
                     let name = format_struct_ident(name);
@@ -338,12 +354,24 @@ pub fn generate_field_from_code(structure: &str, field: &Field, api: &Api) -> To
     quote! {#name: #getter}
 }
 
-pub fn generate_field_into_code(structure: &str, field: &Field, api: &Api) -> TokenStream {
+pub fn generate_into_field(structure: &str, field: &Field, api: &Api) -> TokenStream {
     let name = ffi::format_rust_ident(&field.name);
     let self_name = format_argument_ident(&field.name);
     let ptr = describe_pointer(&field.as_const, &field.pointer);
 
     let getter = match (structure, &field.name[..]) {
+        ("FMOD_ADVANCEDSETTINGS", "cbSize") => {
+            quote! { size_of::<ffi::FMOD_ADVANCEDSETTINGS>() as i32 }
+        }
+        ("FMOD_STUDIO_ADVANCEDSETTINGS", "cbsize") => {
+            quote! { size_of::<ffi::FMOD_STUDIO_ADVANCEDSETTINGS>() as i32 }
+        }
+        ("FMOD_CREATESOUNDEXINFO", "cbsize") => {
+            quote! { size_of::<ffi::FMOD_CREATESOUNDEXINFO>() as i32 }
+        }
+        ("FMOD_DSP_DESCRIPTION", "numparameters") => {
+            quote! { self.paramdesc.len() as i32 }
+        }
         ("FMOD_DSP_PARAMETER_3DATTRIBUTES_MULTI", "relative") => {
             quote! { self.relative.map(Attributes3d::into) }
         }
@@ -426,77 +454,119 @@ pub fn generate_presets(structure: &Structure, api: &Api) -> TokenStream {
             let preset = quote! {
                 #[inline]
                 pub fn #preset() -> Self {
-                    Self::from(ffi::#ident).unwrap()
+                    Self::try_from(ffi::#ident).unwrap()
                 }
             };
             presets.push(preset);
         }
     }
+    let name = format_struct_ident(&structure.name);
+    if presets.is_empty() {
+        quote! {}
+    } else {
+        quote! {
+            impl #name {
+                #(#presets)*
+            }
+        }
+    }
+}
+
+pub fn generate_structure_into(structure: &Structure, api: &Api) -> TokenStream {
+    let ident = format_ident!("{}", structure.name);
+    let name = format_struct_ident(&structure.name);
+    let conversion = structure
+        .fields
+        .iter()
+        .map(|field| generate_into_field(&structure.name, field, api));
+    let union = if structure.union.is_some() {
+        Some(quote! { ,union: self.union })
+    } else {
+        None
+    };
     quote! {
-        #(#presets)*
+        impl Into<ffi::#ident> for #name {
+            fn into(self) -> ffi::#ident {
+                ffi::#ident {
+                    #(#conversion),*
+                    #union
+                }
+            }
+        }
+    }
+}
+
+fn is_convertable(structure: &Structure, field: &Field) -> bool {
+    match (&structure.name[..], &field.name[..]) {
+        ("FMOD_ADVANCEDSETTINGS", "cbSize") => false,
+        ("FMOD_STUDIO_ADVANCEDSETTINGS", "cbsize") => false,
+        ("FMOD_CREATESOUNDEXINFO", "cbsize") => false,
+        ("FMOD_DSP_DESCRIPTION", "numparameters") => false,
+        _ => true,
+    }
+}
+
+pub fn generate_structure_try_from(structure: &Structure, api: &Api) -> TokenStream {
+    let ident = format_ident!("{}", structure.name);
+    let name = format_struct_ident(&structure.name);
+    let conversion = structure
+        .fields
+        .iter()
+        .filter(|field| is_convertable(&structure, field))
+        .map(|field| generate_field_from(&structure.name, field, api));
+    let union = if structure.union.is_some() {
+        Some(quote! { ,union: value.union })
+    } else {
+        None
+    };
+    quote! {
+        impl TryFrom<ffi::#ident> for #name {
+            type Error = Error;
+
+            fn try_from(value: ffi::#ident) -> Result<Self, Self::Error> {
+                unsafe {
+                    Ok(#name {
+                        #(#conversion),*
+                        #union
+                    })
+                }
+            }
+        }
     }
 }
 
 pub fn generate_structure_code(structure: &Structure, api: &Api) -> TokenStream {
     let ident = format_ident!("{}", structure.name);
     let name = format_struct_ident(&structure.name);
-    let mut fields = vec![];
-    let mut from_map = vec![];
-    let mut into_map = vec![];
+    let mut fields: Vec<TokenStream> = structure
+        .fields
+        .iter()
+        .filter(|field| is_convertable(&structure, field))
+        .map(|field| generate_field(structure, field, api))
+        .collect();
+
     let mut derive = quote! { Debug, Clone };
-    for field in &structure.fields {
-        match (&structure.name[..], &field.name[..]) {
-            ("FMOD_ADVANCEDSETTINGS", "cbSize") => {
-                into_map.push(quote! { cbSize: size_of::<ffi::FMOD_ADVANCEDSETTINGS>() as i32 })
-            }
-            ("FMOD_STUDIO_ADVANCEDSETTINGS", "cbsize") => into_map
-                .push(quote! { cbsize: size_of::<ffi::FMOD_STUDIO_ADVANCEDSETTINGS>() as i32 }),
-            ("FMOD_CREATESOUNDEXINFO", "cbsize") => {
-                into_map.push(quote! { cbsize: size_of::<ffi::FMOD_CREATESOUNDEXINFO>() as i32 })
-            }
-            ("FMOD_DSP_DESCRIPTION", "numparameters") => {
-                into_map.push(quote! { numparameters: self.paramdesc.len() as i32 })
-            }
-            _ => {
-                fields.push(generate_field_code(field, api));
-                from_map.push(generate_field_from_code(&structure.name, field, api));
-                into_map.push(generate_field_into_code(&structure.name, field, api));
-            }
-        }
-    }
     if structure.union.is_some() {
         let name = format_ident!("{}_UNION", structure.name);
         fields.push(quote! {
             pub union: ffi::#name
         });
-        from_map.push(quote! { union: value.union });
-        into_map.push(quote! { union: self.union });
         derive = quote! { Clone };
     }
     if structure.name == "FMOD_DSP_DESCRIPTION" {
         derive = quote! { Clone }
     }
     let presets = generate_presets(structure, api);
+    let into = generate_structure_into(structure, api);
+    let try_from = generate_structure_try_from(structure, api);
     quote! {
         #[derive(#derive)]
         pub struct #name {
             #(#fields),*
         }
-        impl #name {
-            pub fn from(value: ffi::#ident) -> Result<#name, Error> {
-                unsafe {
-                    Ok(#name {
-                        #(#from_map),*
-                    })
-                }
-            }
-            pub fn into(self) -> ffi::#ident {
-                ffi::#ident {
-                    #(#into_map),*
-                }
-            }
-            #presets
-        }
+        #presets
+        #try_from
+        #into
     }
 }
 
@@ -768,19 +838,19 @@ fn map_output(argument: &Argument, api: &Api) -> OutArgument {
                 ("*mut", UserTypeDesc::Structure) => OutArgument {
                     target: quote! { let mut #arg = ffi::#ident::default(); },
                     source: quote! { &mut #arg },
-                    output: quote! { #type_name::from(#arg)? },
+                    output: quote! { #type_name::try_from(#arg)? },
                     retype: quote! { #type_name },
                 },
                 ("*mut *mut", UserTypeDesc::Structure) => OutArgument {
                     target: quote! { let mut #arg = null_mut(); },
                     source: quote! { &mut #arg },
-                    output: quote! { #type_name::from(*#arg)? },
+                    output: quote! { #type_name::try_from(*#arg)? },
                     retype: quote! { #type_name },
                 },
                 ("*const *const", UserTypeDesc::Structure) => OutArgument {
                     target: quote! { let mut #arg = null(); },
                     source: quote! { &mut #arg },
-                    output: quote! { #type_name::from(*#arg)? },
+                    output: quote! { #type_name::try_from(*#arg)? },
                     retype: quote! { #type_name },
                 },
                 ("*mut", UserTypeDesc::Enumeration) => OutArgument {
@@ -876,7 +946,7 @@ impl Signature {
             self.targets.push(quote! { let mut points = null_mut(); });
             self.inputs.push(quote! { &mut points });
             self.outputs
-                .push(quote! { to_vec!(points, numpoints, Vector::from)? });
+                .push(quote! { to_vec!(points, numpoints, Vector::try_from)? });
             self.return_types.push(quote! { Vec<Vector> });
             return true;
         }
@@ -904,7 +974,7 @@ impl Signature {
             self.targets.push(quote! { let mut points = null_mut(); });
             self.inputs.push(quote! { &mut points });
             self.outputs
-                .push(quote! { to_vec!(points, numpoints, Vector::from)? });
+                .push(quote! { to_vec!(points, numpoints, Vector::try_from)? });
             self.return_types.push(quote! { Vec<Vector> });
             return true;
         }
@@ -932,7 +1002,7 @@ impl Signature {
             self.targets.push(quote! { let mut points = null_mut(); });
             self.inputs.push(quote! { &mut points });
             self.outputs
-                .push(quote! { to_vec!(points, numpoints, Vector::from)? });
+                .push(quote! { to_vec!(points, numpoints, Vector::try_from)? });
             self.return_types.push(quote! { Vec<Vector> });
             return true;
         }
