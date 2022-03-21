@@ -182,7 +182,7 @@ pub fn format_rust_type(
     }
 }
 
-pub fn generate_enumeration_code(enumeration: &Enumeration) -> TokenStream {
+pub fn generate_enumeration(enumeration: &Enumeration) -> TokenStream {
     let name = format_struct_ident(&enumeration.name);
 
     let mut variants = vec![];
@@ -535,7 +535,7 @@ pub fn generate_structure_try_from(structure: &Structure, api: &Api) -> TokenStr
     }
 }
 
-pub fn generate_structure_code(structure: &Structure, api: &Api) -> TokenStream {
+pub fn generate_structure(structure: &Structure, api: &Api) -> TokenStream {
     let ident = format_ident!("{}", structure.name);
     let name = format_struct_ident(&structure.name);
     let mut fields: Vec<TokenStream> = structure
@@ -1059,7 +1059,7 @@ pub fn generate_method(owner: &str, function: &Function, api: &Api) -> TokenStre
     }
 }
 
-pub fn generate_opaque_type_code(key: &String, methods: &Vec<&Function>, api: &Api) -> TokenStream {
+pub fn generate_opaque_type(key: &String, methods: &Vec<&Function>, api: &Api) -> TokenStream {
     let name = format_struct_ident(key);
     let opaque_type = format_ident!("{}", key);
 
@@ -1208,18 +1208,15 @@ pub fn generate_lib_code(api: &Api) -> Result<TokenStream, Error> {
 
     let types: Vec<TokenStream> = types
         .iter()
-        .map(|(key, methods)| generate_opaque_type_code(key, methods, api))
+        .map(|(key, methods)| generate_opaque_type(key, methods, api))
         .collect();
 
-    let enumerations: Vec<TokenStream> = api
-        .enumerations
-        .iter()
-        .map(generate_enumeration_code)
-        .collect();
+    let enumerations: Vec<TokenStream> =
+        api.enumerations.iter().map(generate_enumeration).collect();
 
     let mut structures: Vec<TokenStream> = vec![];
     for structure in &api.structures {
-        structures.push(generate_structure_code(structure, api));
+        structures.push(generate_structure(structure, api));
     }
 
     Ok(quote! {
@@ -1337,9 +1334,10 @@ pub fn generate(api: &Api) -> Result<String, Error> {
 
 #[cfg(test)]
 mod tests {
-    use crate::lib::{generate_enumeration_code, generate_method, generate_structure_code};
+    use crate::lib::{generate_enumeration, generate_method, generate_structure};
     use crate::models::Type::{FundamentalType, UserType};
     use crate::models::{Argument, Enumeration, Enumerator, Field, Function, Pointer, Structure};
+    use crate::Api;
 
     fn normal() -> Option<Pointer> {
         Some(Pointer::NormalPointer("*".into()))
@@ -1371,16 +1369,14 @@ mod tests {
                 },
             ],
         };
-        let actual = generate_method("FMOD_SYSTEM", &function).to_string();
+        let actual = generate_method("FMOD_SYSTEM", &function, &Api::default()).to_string();
         let expected = quote! {
             pub fn set_dsp_buffer_size(&self, bufferlength: u32, numbuffers: i32) -> Result<(), Error> {
-                let result = unsafe {
-                    ffi::FMOD_System_SetDSPBufferSize(self.pointer, bufferlength, numbuffers)
-                };
-                if result == FMOD_OK {
-                    Ok(())
-                } else {
-                    Err(err_fmod!("FMOD_System_SetDSPBufferSize", result))
+                unsafe {
+                    match ffi::FMOD_System_SetDSPBufferSize(self.pointer, bufferlength, numbuffers) {
+                        ffi::FMOD_OK => Ok(()),
+                        error => Err(err_fmod!("FMOD_System_SetDSPBufferSize", error)),
+                    }
                 }
             }
         }.to_string();
@@ -1406,7 +1402,7 @@ mod tests {
                 },
             ],
         };
-        let actual = generate_enumeration_code(&enumeration).to_string();
+        let actual = generate_enumeration(&enumeration).to_string();
         let expected = quote! {
             #[derive(Debug, Clone, Copy, PartialEq)]
             pub enum OutputType {
@@ -1452,7 +1448,7 @@ mod tests {
                 },
             ],
         };
-        let actual = generate_enumeration_code(&enumeration).to_string();
+        let actual = generate_enumeration(&enumeration).to_string();
         let expected = quote! {
             #[derive(Debug, Clone, Copy, PartialEq)]
             pub enum SpeakerMode {
@@ -1498,7 +1494,7 @@ mod tests {
                 },
             ],
         };
-        let actual = generate_enumeration_code(&enumeration).to_string();
+        let actual = generate_enumeration(&enumeration).to_string();
         let expected = quote! {
             #[derive(Debug, Clone, Copy, PartialEq)]
             pub enum ParameterType {
@@ -1544,7 +1540,7 @@ mod tests {
                 },
             ],
         };
-        let actual = generate_enumeration_code(&enumeration).to_string();
+        let actual = generate_enumeration(&enumeration).to_string();
         let expected = quote! {
             #[derive(Debug, Clone, Copy, PartialEq)]
             pub enum LoadMemoryMode {
@@ -1604,7 +1600,7 @@ mod tests {
             ],
             union: None,
         };
-        let actual = generate_structure_code(&structure).unwrap().to_string();
+        let actual = generate_structure(&structure, &Api::default()).to_string();
         let expected = quote! {
             #[derive(Debug, Clone)]
             pub struct Vector {
@@ -1613,12 +1609,25 @@ mod tests {
                 pub z: f32
             }
 
-            impl From<ffi::FMOD_VECTOR> for Vector {
-                fn from (value: ffi::FMOD_VECTOR) -> Self {
-                    Self {
-                        x: value.x,
-                        y: value.y,
-                        z: value.z
+            impl TryFrom<ffi::FMOD_VECTOR> for Vector {
+                type Error = Error;
+                fn try_from(value: ffi::FMOD_VECTOR) -> Result<Self, Self::Error> {
+                    unsafe {
+                        Ok(Vector {
+                            x: value.x,
+                            y: value.y,
+                            z: value.z
+                        })
+                    }
+                }
+            }
+
+            impl Into<ffi::FMOD_VECTOR> for Vector {
+                fn into(self) -> ffi::FMOD_VECTOR {
+                    ffi::FMOD_VECTOR {
+                        x: self.x,
+                        y: self.y,
+                        z: self.z
                     }
                 }
             }
@@ -1640,17 +1649,28 @@ mod tests {
             }],
             union: None,
         };
-        let actual = generate_structure_code(&structure).unwrap().to_string();
+        let actual = generate_structure(&structure, &Api::default()).to_string();
         let expected = quote! {
             #[derive(Debug, Clone)]
             pub struct PluginList {
-                pub type_: PluginType
+                pub type_: ffi::FMOD_PLUGINTYPE
             }
 
-            impl From<ffi::FMOD_PLUGINLIST> for PluginList {
-                fn from (value: ffi::FMOD_PLUGINLIST) -> Self {
-                    Self {
-                        type_: value.type_
+            impl TryFrom<ffi::FMOD_PLUGINLIST> for PluginList {
+                type Error = Error;
+                fn try_from(value: ffi::FMOD_PLUGINLIST) -> Result<Self, Self::Error> {
+                    unsafe {
+                        Ok(PluginList {
+                            type_: value.type_
+                        })
+                    }
+                }
+            }
+
+            impl Into<ffi::FMOD_PLUGINLIST> for PluginList {
+                fn into(self) -> ffi::FMOD_PLUGINLIST {
+                    ffi::FMOD_PLUGINLIST {
+                        type_: self.type_
                     }
                 }
             }

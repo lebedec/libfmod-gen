@@ -540,7 +540,9 @@ mod tests {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
             #![allow(unused_parens)]
+            use std::mem::size_of;
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
+            use std::ptr::null_mut;
 
             pub const FMOD_MAX_CHANNEL_WIDTH: c_uint = 32;
         };
@@ -558,7 +560,9 @@ mod tests {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
             #![allow(unused_parens)]
+            use std::mem::size_of;
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
+            use std::ptr::null_mut;
 
             pub const FMOD_PORT_INDEX_NONE: c_ulonglong = 0xFFFFFFFFFFFFFFFF;
         };
@@ -576,7 +580,9 @@ mod tests {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
             #![allow(unused_parens)]
+            use std::mem::size_of;
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
+            use std::ptr::null_mut;
 
             pub const FMOD_VERSION: c_uint = 0x00020203;
         };
@@ -594,7 +600,9 @@ mod tests {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
             #![allow(unused_parens)]
+            use std::mem::size_of;
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
+            use std::ptr::null_mut;
 
             pub type FMOD_PORT_INDEX = c_ulonglong;
         };
@@ -611,7 +619,9 @@ mod tests {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
             #![allow(unused_parens)]
+            use std::mem::size_of;
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
+            use std::ptr::null_mut;
 
             #[repr(C)]
             #[derive(Debug, Copy, Clone)]
@@ -635,7 +645,9 @@ mod tests {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
             #![allow(unused_parens)]
+            use std::mem::size_of;
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
+            use std::ptr::null_mut;
 
             #[repr(C)]
             #[derive(Debug, Copy, Clone)]
@@ -676,7 +688,9 @@ mod tests {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
             #![allow(unused_parens)]
+            use std::mem::size_of;
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
+            use std::ptr::null_mut;
 
             pub type FMOD_CHANNELCONTROL_DSP_INDEX = c_int;
             pub const FMOD_CHANNELCONTROL_DSP_HEAD: FMOD_CHANNELCONTROL_DSP_INDEX = -1;
@@ -706,7 +720,9 @@ mod tests {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
             #![allow(unused_parens)]
+            use std::mem::size_of;
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
+            use std::ptr::null_mut;
 
             pub type FMOD_PLUGINTYPE = c_int;
             pub const FMOD_PLUGINTYPE_OUTPUT: FMOD_PLUGINTYPE = 0;
@@ -747,7 +763,9 @@ mod tests {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
             #![allow(unused_parens)]
+            use std::mem::size_of;
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
+            use std::ptr::null_mut;
 
             pub type FMOD_SPEAKER = c_int;
             pub const FMOD_SPEAKER_NONE: FMOD_SPEAKER = -1;
@@ -778,7 +796,9 @@ mod tests {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
             #![allow(unused_parens)]
+            use std::mem::size_of;
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
+            use std::ptr::null_mut;
 
             pub type FMOD_FILE_ASYNCDONE_FUNC =
                 Option<unsafe extern "C" fn(info: *mut FMOD_ASYNCREADINFO)>;
@@ -805,7 +825,9 @@ mod tests {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
             #![allow(unused_parens)]
+            use std::mem::size_of;
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
+            use std::ptr::null_mut;
 
             pub type FMOD_DSP_LOG_FUNC =
                 Option<unsafe extern "C" fn(level: FMOD_DEBUG_FLAGS, ...)>;
@@ -840,7 +862,9 @@ mod tests {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
             #![allow(unused_parens)]
+            use std::mem::size_of;
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
+            use std::ptr::null_mut;
 
             pub type FMOD_MEMORY_ALLOC_CALLBACK =
                 Option<unsafe extern "C" fn(size: c_uint, type_: FMOD_MEMORY_TYPE) -> *mut c_void>;
@@ -870,7 +894,9 @@ mod tests {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
             #![allow(unused_parens)]
+            use std::mem::size_of;
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
+            use std::ptr::null_mut;
 
             pub type FMOD_DEBUG_FLAGS = c_uint;
             pub const FMOD_DEBUG_LEVEL_NONE: FMOD_DEBUG_FLAGS = 0x00000000;
@@ -908,7 +934,9 @@ mod tests {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
             #![allow(unused_parens)]
+            use std::mem::size_of;
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
+            use std::ptr::null_mut;
 
             pub type FMOD_CHANNELMASK = c_uint;
             pub const FMOD_CHANNELMASK_FRONT_LEFT: FMOD_CHANNELMASK = 0x00000001;
@@ -940,7 +968,9 @@ mod tests {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
             #![allow(unused_parens)]
+            use std::mem::size_of;
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
+            use std::ptr::null_mut;
 
             pub type FMOD_THREAD_PRIORITY = c_int;
             pub const FMOD_THREAD_PRIORITY_PLATFORM_MIN: FMOD_THREAD_PRIORITY = (-32 * 1024);
@@ -983,7 +1013,9 @@ mod tests {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
             #![allow(unused_parens)]
+            use std::mem::size_of;
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
+            use std::ptr::null_mut;
 
             #[repr(C)]
             #[derive(Debug, Copy, Clone)]
@@ -991,6 +1023,16 @@ mod tests {
                 pub x: c_float,
                 pub y: c_float,
                 pub z: c_float
+            }
+
+            impl Default for FMOD_VECTOR {
+                fn default() -> Self {
+                    Self {
+                        x: Default::default(),
+                        y: Default::default(),
+                        z: Default::default(),
+                    }
+                }
             }
         };
         assert_eq!(generate(&api), Ok(format(code)));
@@ -1037,7 +1079,9 @@ mod tests {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
             #![allow(unused_parens)]
+            use std::mem::size_of;
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
+            use std::ptr::null_mut;
 
             #[repr(C)]
             #[derive(Debug, Copy, Clone)]
@@ -1046,6 +1090,17 @@ mod tests {
                 pub Data2: c_ushort,
                 pub Data3: c_ushort,
                 pub Data4: [c_uchar; 8 as usize],
+            }
+
+            impl Default for FMOD_GUID {
+                fn default() -> Self {
+                    Self {
+                        Data1: Default::default(),
+                        Data2: Default::default(),
+                        Data3: Default::default(),
+                        Data4: Default::default(),
+                    }
+                }
             }
         };
         assert_eq!(generate(&api), Ok(format(code)));
@@ -1069,12 +1124,22 @@ mod tests {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
             #![allow(unused_parens)]
+            use std::mem::size_of;
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
+            use std::ptr::null_mut;
 
             #[repr(C)]
             #[derive(Debug, Copy, Clone)]
             pub struct FMOD_DSP_LOUDNESS_METER_INFO_TYPE {
                 pub loudnesshistogram: [c_float; FMOD_DSP_LOUDNESS_METER_HISTOGRAM_SAMPLES as usize],
+            }
+
+            impl Default for FMOD_DSP_LOUDNESS_METER_INFO_TYPE {
+                fn default() -> Self {
+                    Self {
+                        loudnesshistogram: [0.0; FMOD_DSP_LOUDNESS_METER_HISTOGRAM_SAMPLES as usize],
+                    }
+                }
             }
         };
         assert_eq!(generate(&api), Ok(format(code)));
@@ -1098,12 +1163,22 @@ mod tests {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
             #![allow(unused_parens)]
+            use std::mem::size_of;
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
+            use std::ptr::null_mut;
 
             #[repr(C)]
             #[derive(Debug, Copy, Clone)]
             pub struct FMOD_DSP_PARAMETER_DESC_INT {
                 pub valuenames: *const *const c_char,
+            }
+
+            impl Default for FMOD_DSP_PARAMETER_DESC_INT {
+                fn default() -> Self {
+                    Self {
+                        valuenames: null_mut(),
+                    }
+                }
             }
         };
         assert_eq!(generate(&api), Ok(format(code)));
@@ -1144,7 +1219,9 @@ mod tests {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
             #![allow(unused_parens)]
+            use std::mem::size_of;
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
+            use std::ptr::null_mut;
 
             #[repr(C)]
             #[derive(Copy, Clone)]
@@ -1152,6 +1229,16 @@ mod tests {
                 pub type_: FMOD_DSP_PARAMETER_TYPE,
                 pub union: FMOD_DSP_PARAMETER_DESC_UNION,
             }
+
+            impl Default for FMOD_DSP_PARAMETER_DESC {
+                fn default() -> Self {
+                    Self {
+                        type_: Default::default(),
+                        union: FMOD_DSP_PARAMETER_DESC_UNION { floatdesc: Default::default() }
+                    }
+                }
+            }
+
             #[repr(C)]
             #[derive(Copy, Clone)]
             pub union FMOD_DSP_PARAMETER_DESC_UNION {
@@ -1193,13 +1280,24 @@ mod tests {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
             #![allow(unused_parens)]
+            use std::mem::size_of;
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
+            use std::ptr::null_mut;
 
             #[repr(C)]
             #[derive(Debug, Copy, Clone)]
             pub struct FMOD_REVERB_PROPERTIES {
                 pub DecayTime: c_float,
                 pub EarlyDelay: c_float,
+            }
+
+            impl Default for FMOD_REVERB_PROPERTIES {
+                fn default() -> Self {
+                    Self {
+                        DecayTime: Default::default(),
+                        EarlyDelay: Default::default(),
+                    }
+                }
             }
 
             pub const FMOD_PRESET_OFF: FMOD_REVERB_PROPERTIES = FMOD_REVERB_PROPERTIES {
@@ -1238,7 +1336,9 @@ mod tests {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
             #![allow(unused_parens)]
+            use std::mem::size_of;
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
+            use std::ptr::null_mut;
 
             #[link(name = "fmod")]
             extern "C" {
@@ -1276,7 +1376,9 @@ mod tests {
             #![allow(non_camel_case_types)]
             #![allow(non_snake_case)]
             #![allow(unused_parens)]
+            use std::mem::size_of;
             use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
+            use std::ptr::null_mut;
 
             pub fn map_fmod_error(result: FMOD_RESULT) -> &'static str {
                 match result {
