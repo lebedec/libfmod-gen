@@ -59,7 +59,7 @@ return_type = { FundamentalType | UserType}
 varargs = { "," ~ "..." }
 Callback = { "typedef" ~ return_type ~ pointer? ~ ("(F_CALLBACK *" | "(F_CALL *") ~ name ~ ")" ~ "(" ~ arguments ~ varargs?  ~ ")" ~  ";" }
 
-Macros = {"#define" ~ name ~ "(" ~ (!"#" ~ ANY)* }
+Macros = {"#define" ~ name ~ "(" ~ (!"#end" ~ ANY)* }
 
 declaration = _{
     OpaqueType |

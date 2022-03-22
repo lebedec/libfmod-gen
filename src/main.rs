@@ -119,9 +119,15 @@ fn generate_lib_fmod(source: &str) -> Result<(), Error> {
 
     // POST PROCESSING
 
-    api.opaque_types.push(OpaqueType {
-        name: "FMOD_STUDIO_SYSTEM".into(),
-    });
+    if !api
+        .opaque_types
+        .iter()
+        .any(|opaque_type| opaque_type.name == "FMOD_STUDIO_SYSTEM")
+    {
+        api.opaque_types.push(OpaqueType {
+            name: "FMOD_STUDIO_SYSTEM".into(),
+        });
+    }
     let not_specified_output = &[
         "FMOD_Studio_CommandReplay_GetSystem+system",
         "FMOD_Studio_CommandReplay_GetCommandString+buffer",
@@ -193,7 +199,7 @@ fn generate_lib_fmod(source: &str) -> Result<(), Error> {
 }
 
 fn main() {
-    if let Err(error) = generate_lib_fmod("./fmod") {
+    if let Err(error) = generate_lib_fmod("./fmod/20206") {
         println!("Unable to generate libfmod, {:?}", error);
     }
 }
