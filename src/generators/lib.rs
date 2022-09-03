@@ -242,6 +242,14 @@ pub fn generate_field(structure: &Structure, field: &Field, api: &Api) -> TokenS
         ("FMOD_DSP_DESCRIPTION", "numparameters") => {
             return quote! {};
         }
+        ("FMOD_DSP_PARAMETER_FFT", "spectrum") => {
+            return quote! {
+                pub spectrum: Vec<Vec<f32>>
+            };
+        }
+        ("FMOD_DSP_PARAMETER_FFT", "numchannels") => {
+            return quote! {};
+        }
         _ => {}
     }
 
@@ -315,7 +323,7 @@ pub fn generate_field_from(structure: &str, field: &Field, api: &Api) -> TokenSt
             quote! { vec![] } // TODO
         }
         ("FMOD_DSP_PARAMETER_FFT", "spectrum") => {
-            quote! { value.spectrum.map(|ptr| to_vec!(ptr, value.numchannels)) }
+            quote! { to_vec!(value.spectrum.as_ptr(), value.numchannels, |ptr| Ok(to_vec!(ptr, value.length)))? }
         }
         ("FMOD_DSP_DESCRIPTION", "paramdesc") => {
             quote! { to_vec!(*value.paramdesc, value.numparameters, DspParameterDesc::try_from)? }
@@ -408,14 +416,17 @@ pub fn generate_into_field(structure: &str, field: &Field, api: &Api) -> TokenSt
         ("FMOD_DSP_PARAMETER_DESC_BOOL", "valuenames") => {
             quote! { self.valuenames.as_ptr() as *mut _ }
         }
-        ("FMOD_DSP_PARAMETER_FFT", "spectrum") => {
-            quote! { self.spectrum.map(|val| val.as_ptr() as *mut _) }
-        }
         ("FMOD_DSP_DESCRIPTION", "paramdesc") => {
             quote! { &mut vec_as_mut_ptr(self.paramdesc, |param| param.into()) }
         }
         ("FMOD_DSP_STATE", "sidechaindata") => {
             quote! { self.sidechaindata.as_ptr() as *mut _ }
+        }
+        ("FMOD_DSP_PARAMETER_FFT", "numchannels") => {
+            quote! { self.spectrum.len() as i32 }
+        }
+        ("FMOD_DSP_PARAMETER_FFT", "spectrum") => {
+            quote! { [null_mut(); 32] }
         }
         _ => match &field.field_type {
             FundamentalType(name) => match (ptr, &name[..]) {
@@ -502,6 +513,7 @@ fn is_convertable(structure: &Structure, field: &Field) -> bool {
         ("FMOD_STUDIO_ADVANCEDSETTINGS", "cbsize") => false,
         ("FMOD_CREATESOUNDEXINFO", "cbsize") => false,
         ("FMOD_DSP_DESCRIPTION", "numparameters") => false,
+        ("FMOD_DSP_PARAMETER_FFT", "numchannels") => false,
         _ => true,
     }
 }
@@ -519,6 +531,7 @@ pub fn generate_structure_try_from(structure: &Structure, api: &Api) -> TokenStr
     } else {
         None
     };
+    let conversions = api.conversions.get(&structure.name);
     quote! {
         impl TryFrom<ffi::#ident> for #name {
             type Error = Error;
@@ -532,6 +545,7 @@ pub fn generate_structure_try_from(structure: &Structure, api: &Api) -> TokenStr
                 }
             }
         }
+        #conversions
     }
 }
 
@@ -1239,7 +1253,8 @@ pub fn generate_lib_code(api: &Api) -> Result<TokenStream, Error> {
                 value: String
             },
             String(IntoStringError),
-            StringNul(NulError)
+            StringNul(NulError),
+            NotDspFft
         }
 
         impl From<NulError> for Error {

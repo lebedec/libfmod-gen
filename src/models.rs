@@ -1,3 +1,4 @@
+use quote::__private::TokenStream;
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
@@ -162,4 +163,5 @@ pub struct Api {
     pub presets: Vec<Preset>,
     pub errors: ErrorStringMapping,
     pub modifiers: HashMap<String, Modifier>,
+    pub conversions: HashMap<String, TokenStream>,
 }

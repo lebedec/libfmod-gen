@@ -149,6 +149,24 @@ fn generate_lib_fmod(source: &str) -> Result<(), Error> {
         api.modifiers.remove(&key.to_string());
     }
 
+    api.conversions.insert("FMOD_DSP_PARAMETER_FFT".to_string(), quote! {
+        impl TryFrom<Dsp> for DspParameterFft {
+            type Error = Error;
+            fn try_from(dsp: Dsp) -> Result<Self, Self::Error> {
+                match dsp.get_type() {
+                    Ok(DspType::Fft) => {
+                        let (ptr, _, _) = dsp.get_parameter_data(ffi::FMOD_DSP_FFT_SPECTRUMDATA, 0)?;
+                        let fft = unsafe {
+                            *(ptr as *const ffi::FMOD_DSP_PARAMETER_FFT)
+                        };
+                        DspParameterFft::try_from(fft)
+                    },
+                    _ => Err(Error::NotDspFft)
+                }
+            }
+        }
+    });
+
     println!("FMOD API");
     println!("Opaque Types: {}", api.opaque_types.len());
     println!("Type Aliases: {}", api.type_aliases.len());
