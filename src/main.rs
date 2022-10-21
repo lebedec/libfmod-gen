@@ -15,7 +15,7 @@ use crate::parsers::{
     fmod, fmod_codec, fmod_common, fmod_docs, fmod_dsp, fmod_dsp_effects, fmod_errors, fmod_output,
     fmod_studio, fmod_studio_common,
 };
-use std::fs;
+use std::{env, fs};
 use std::path::Path;
 
 mod generators;
@@ -23,15 +23,13 @@ mod models;
 mod parsers;
 mod repr;
 
-fn generate_lib_fmod(source: &str) -> Result<(), Error> {
+fn generate_lib_fmod(source: &str, destination: &str) -> Result<(), Error> {
     let source = Path::new(source);
     let mut api = Api::default();
-
     let data = fs::read_to_string(source.join("api/studio/inc/fmod_studio.h"))?;
     let header = fmod_studio::parse(&data)?;
     let link = "fmodstudio".into();
     api.functions.push((link, header.functions.clone()));
-
     let data = fs::read_to_string(source.join("api/studio/inc/fmod_studio_common.h"))?;
     let header = fmod_studio_common::parse(&data)?;
     api.opaque_types.extend(header.opaque_types);
@@ -208,16 +206,22 @@ fn generate_lib_fmod(source: &str) -> Result<(), Error> {
     println!("Parameter Modifiers: {}", api.modifiers.len());
     println!("Errors: {}", api.errors.errors.len());
 
+    let destination = Path::new(destination);
     let code = ffi::generate(&api)?;
-    fs::write("../libfmod/src/ffi.rs", code)?;
+    fs::write(destination.join("src/ffi.rs"), code)?;
     let code = lib::generate(&api)?;
-    fs::write("../libfmod/src/lib.rs", code)?;
+    fs::write(destination.join("src/lib.rs"), code)?;
 
     Ok(())
 }
 
+const FMOD_SDK_PATH: &str = "C:\\Program Files (x86)\\FMOD SoundSystem\\FMOD Studio API Windows";
+
 fn main() {
-    if let Err(error) = generate_lib_fmod("./fmod/20206") {
+    let mut args = env::args();
+    let source = args.nth(1).unwrap_or(FMOD_SDK_PATH.to_string());
+    let destination = args.nth(2).unwrap_or("../libfmod".to_string());
+    if let Err(error) = generate_lib_fmod(&source, &destination) {
         println!("Unable to generate libfmod, {:?}", error);
     }
 }

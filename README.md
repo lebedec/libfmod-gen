@@ -9,4 +9,5 @@ The generator has the following compatibilities with the FMOD Engine:
 
 | FMOD Version | Release Date | Notes |
 |--------------|--------------|-------|
-| 2.02.03     |              |        |
+| 2.02.06      |              |       |
+| 2.02.03      |              |       |

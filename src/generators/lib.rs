@@ -33,10 +33,10 @@ fn extract_struct_key(name: &str) -> String {
 }
 
 const ENUMERATOR_RENAMES: &[(&str, &str)] = &[
-    ("FMOD_STUDIO_LOAD_MEMORY", "FMOD_STUDIO_LOAD_MEMORY_MMEMORY"),
+    ("FMOD_STUDIO_LOAD_MEMORY", "FMOD_STUDIO_LOAD_MEMORY_MEMORY"),
     (
         "FMOD_STUDIO_LOAD_MEMORY_POINT",
-        "FMOD_STUDIO_LOAD_MEMORY_MMEMORY_POINT",
+        "FMOD_STUDIO_LOAD_MEMORY_MEMORY_POINT",
     ),
 ];
 
@@ -45,20 +45,34 @@ fn format_variant(enumeration: &str, name: &str) -> Ident {
         None => name,
         Some(pair) => pair.1,
     };
-    let mut p = 0;
-    while p < name.len() && p < enumeration.len() {
-        if enumeration.chars().nth(p) != name.chars().nth(p) {
-            break;
-        }
-        p += 1;
-    }
-    let key = (&name[p..]).to_case(Case::UpperCamel);
+    let enumeration_words: Vec<&str> = enumeration.split("_").collect();
+    let variant_words: Vec<&str> = name.split("_").collect();
+    // enumeration:
+    // ["FMOD", "STUDIO", "PLAYBACK", "STATE"]
+    // variants:
+    // ["FMOD", "STUDIO", "PLAYBACK", "SUSTAINING"]
+    // ["FMOD", "STUDIO", "PLAYBACK", "STOPPED"]
+    // ...
+    let key = variant_words.into_iter()
+        .enumerate()
+        .skip_while(|(index, word)| enumeration_words.get(*index) == Some(word))
+        .map(|(_, word)| word)
+        .collect::<Vec<&str>>()
+        .join("_");
 
-    let key = if key.chars().nth(0).unwrap_or('a').is_ascii_digit() {
-        format!("_{}", key)
+    let key = if key.starts_with("3D") {
+        format!("{}3d", &key[2..])
     } else {
         key
     };
+
+    let key = if key.starts_with("2D") {
+        format!("{}2d", &key[2..])
+    } else {
+        key
+    };
+
+    let key = key.to_case(Case::UpperCamel);
     let name = key;
     let name = match RENAMES.get(&name[..]) {
         None => name,
@@ -550,7 +564,6 @@ pub fn generate_structure_try_from(structure: &Structure, api: &Api) -> TokenStr
 }
 
 pub fn generate_structure(structure: &Structure, api: &Api) -> TokenStream {
-    let ident = format_ident!("{}", structure.name);
     let name = format_struct_ident(&structure.name);
     let mut fields: Vec<TokenStream> = structure
         .fields
@@ -1349,13 +1362,25 @@ pub fn generate(api: &Api) -> Result<String, Error> {
 
 #[cfg(test)]
 mod tests {
-    use crate::lib::{generate_enumeration, generate_method, generate_structure};
+    use crate::lib::{format_variant, generate_enumeration, generate_method, generate_structure};
     use crate::models::Type::{FundamentalType, UserType};
     use crate::models::{Argument, Enumeration, Enumerator, Field, Function, Pointer, Structure};
     use crate::Api;
 
     fn normal() -> Option<Pointer> {
         Some(Pointer::NormalPointer("*".into()))
+    }
+
+    #[test]
+    fn test_variant_name_starts_with_same_letter_as_enumeration_name() {
+        let ident = format_variant("FMOD_STUDIO_PLAYBACK_STATE", "FMOD_STUDIO_PLAYBACK_SUSTAINING");
+        assert_eq!(ident, format_ident!("Sustaining"));
+    }
+
+    #[test]
+    fn test_variant_name_duplicates_one_word_of_enumeration_name() {
+        let ident = format_variant("FMOD_STUDIO_LOADING_STATE", "FMOD_STUDIO_LOADING_STATE_LOADING");
+        assert_eq!(ident, format_ident!("Loading"));
     }
 
     #[test]

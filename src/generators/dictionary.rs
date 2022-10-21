@@ -134,6 +134,7 @@ lazy_static! {
             ("DspObjectpan", "DspObjectPan"),
             ("Outputgain", "OutputGain"),
             ("3DAttributes", "Attributes3d"),
+            ("3DAttributesMulti", "AttributesMulti3d"),
             ("Pluginlist", "PluginList"),
             ("Fmodresult", "FmodResult"),
             ("Studioadvancedsettings", "StudioAdvancedSettings"),
@@ -148,6 +149,14 @@ lazy_static! {
                 "DspParameterAttributes3dMulti",
             ),
             ("3DRolloffCallback", "RolloffCallback3d"),
+            ("Channelpriority", "ChannelPriority"),
+            ("Audioworklet", "AudioWorklet"),
+            ("5Point1", "Mode5Point1"),
+            ("7Point1", "Mode7Point1"),
+            ("7Point1Point4", "Mode7Point1Point4"),
+            ("12Db", "Slope12Db"),
+            ("24Db", "Slope24Db"),
+            ("48Db", "Slope48Db"),
         ])
     };
 }
