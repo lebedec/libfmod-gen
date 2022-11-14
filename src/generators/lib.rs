@@ -53,7 +53,8 @@ fn format_variant(enumeration: &str, name: &str) -> Ident {
     // ["FMOD", "STUDIO", "PLAYBACK", "SUSTAINING"]
     // ["FMOD", "STUDIO", "PLAYBACK", "STOPPED"]
     // ...
-    let key = variant_words.into_iter()
+    let key = variant_words
+        .into_iter()
         .enumerate()
         .skip_while(|(index, word)| enumeration_words.get(*index) == Some(word))
         .map(|(_, word)| word)
@@ -1057,6 +1058,10 @@ impl AddAssign<OutArgument> for Signature {
 pub fn generate_method(owner: &str, function: &Function, api: &Api) -> TokenStream {
     let mut signature = Signature::new();
 
+    if let Some(overriding) = api.overriding.get(&function.name) {
+        return overriding.clone();
+    }
+
     for argument in &function.arguments {
         if !signature.overwrites(owner, function, argument) {
             match api.get_modifier(&function.name, &argument.name) {
@@ -1373,13 +1378,19 @@ mod tests {
 
     #[test]
     fn test_variant_name_starts_with_same_letter_as_enumeration_name() {
-        let ident = format_variant("FMOD_STUDIO_PLAYBACK_STATE", "FMOD_STUDIO_PLAYBACK_SUSTAINING");
+        let ident = format_variant(
+            "FMOD_STUDIO_PLAYBACK_STATE",
+            "FMOD_STUDIO_PLAYBACK_SUSTAINING",
+        );
         assert_eq!(ident, format_ident!("Sustaining"));
     }
 
     #[test]
     fn test_variant_name_duplicates_one_word_of_enumeration_name() {
-        let ident = format_variant("FMOD_STUDIO_LOADING_STATE", "FMOD_STUDIO_LOADING_STATE_LOADING");
+        let ident = format_variant(
+            "FMOD_STUDIO_LOADING_STATE",
+            "FMOD_STUDIO_LOADING_STATE_LOADING",
+        );
         assert_eq!(ident, format_ident!("Loading"));
     }
 

@@ -15,11 +15,12 @@ use crate::parsers::{
     fmod, fmod_codec, fmod_common, fmod_docs, fmod_dsp, fmod_dsp_effects, fmod_errors, fmod_output,
     fmod_studio, fmod_studio_common,
 };
-use std::{env, fs};
 use std::path::Path;
+use std::{env, fs};
 
 mod generators;
 mod models;
+mod overriding;
 mod parsers;
 mod repr;
 
@@ -164,6 +165,7 @@ fn generate_lib_fmod(source: &str, destination: &str) -> Result<(), Error> {
             }
         }
     });
+    api.override_functions();
 
     println!("FMOD API");
     println!("Opaque Types: {}", api.opaque_types.len());
