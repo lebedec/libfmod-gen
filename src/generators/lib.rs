@@ -283,6 +283,7 @@ pub fn generate_field(structure: &Structure, field: &Field, api: &Api) -> TokenS
             Some(dimension)
         }
     };
+
     let field_type = format_rust_type(
         &field.field_type,
         &field.as_const,
@@ -290,8 +291,37 @@ pub fn generate_field(structure: &Structure, field: &Field, api: &Api) -> TokenS
         &as_array,
         &api,
     );
-    quote! {
+
+    let q = quote! {
         pub #name: #field_type
+    };
+
+    let mut q2 = None;
+    if let Type::FundamentalType(fname) = &field.field_type {
+        let ptr = describe_pointer(&field.as_const, &field.pointer);
+        if fname == "char" && ptr == "" {
+            if let Some(dimension) = &as_array {
+                q2 = Some(quote! {
+                    #[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
+                    pub #name: [u8; #dimension as usize],
+                    #[cfg(not(any(target_arch = "arm", target_arch = "aarch64")))]
+                    pub #name: [i8; #dimension as usize]
+                });
+            } else {
+                q2 = Some(quote! {
+                    #[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
+                    pub #name: u8,
+                    #[cfg(not(any(target_arch = "arm", target_arch = "aarch64")))]
+                    pub #name: i8
+                });
+            }
+        }
+    }
+
+    if let Some(q) = q2 {
+        q
+    } else {
+        q
     }
 }
 
