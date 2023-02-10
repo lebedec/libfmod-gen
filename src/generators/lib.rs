@@ -136,7 +136,7 @@ pub fn format_rust_type(
             ("*mut *mut", "float") => quote! { Vec<f32> },
             ("*mut *mut", "char") => quote! { Vec<String> },
             ("", "unsigned char") => quote! { u8 },
-            ("", "char") => quote! { i8 },
+            ("", "char") => quote! { c_char },
             ("", "int") => quote! { i32 },
             ("", "unsigned int") => quote! { u32 },
             ("", "short") => quote! { i16 },
