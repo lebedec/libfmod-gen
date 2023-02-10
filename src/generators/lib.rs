@@ -1504,14 +1504,14 @@ mod tests {
             #[derive(Debug, Clone, Copy, PartialEq)]
             pub enum SpeakerMode {
                 Default,
-                _5Point1
+                Mode5Point1
             }
 
             impl From<SpeakerMode> for ffi::FMOD_SPEAKERMODE {
                 fn from(value: SpeakerMode) -> ffi::FMOD_SPEAKERMODE {
                     match value {
                         SpeakerMode::Default => ffi::FMOD_SPEAKERMODE_DEFAULT,
-                        SpeakerMode::_5Point1 => ffi::FMOD_SPEAKERMODE_5POINT1
+                        SpeakerMode::Mode5Point1 => ffi::FMOD_SPEAKERMODE_5POINT1
                     }
                 }
             }
@@ -1520,7 +1520,7 @@ mod tests {
                 pub fn from(value: ffi::FMOD_SPEAKERMODE) -> Result<SpeakerMode, Error> {
                     match value {
                         ffi::FMOD_SPEAKERMODE_DEFAULT => Ok(SpeakerMode::Default),
-                        ffi::FMOD_SPEAKERMODE_5POINT1 => Ok(SpeakerMode::_5Point1),
+                        ffi::FMOD_SPEAKERMODE_5POINT1 => Ok(SpeakerMode::Mode5Point1),
                         _ => Err(err_enum!("FMOD_SPEAKERMODE" , value)),
                     }
                 }
