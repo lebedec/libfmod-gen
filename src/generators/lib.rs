@@ -1253,6 +1253,7 @@ pub fn generate_lib_code(api: &Api) -> Result<TokenStream, Error> {
 
     Ok(quote! {
         #![allow(unused_unsafe)]
+        use std::os::raw::{c_char};
         use std::ffi::{c_void, CStr, CString, IntoStringError, NulError};
         use std::mem::size_of;
         use std::ptr::{null, null_mut};

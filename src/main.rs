@@ -26,6 +26,13 @@ mod repr;
 
 fn generate_lib_fmod(source: &str, destination: &str) -> Result<(), Error> {
     let source = Path::new(source);
+    if !source.join("api/studio/inc/fmod_studio.h").exists() {
+        return Err(Error::Io(
+            "FMOD headers not found, make sure input is FMOD SDK \
+            directory with api, doc, plugin folders"
+                .to_string(),
+        ));
+    }
     let mut api = Api::default();
     let data = fs::read_to_string(source.join("api/studio/inc/fmod_studio.h"))?;
     let header = fmod_studio::parse(&data)?;
@@ -209,6 +216,11 @@ fn generate_lib_fmod(source: &str, destination: &str) -> Result<(), Error> {
     println!("Errors: {}", api.errors.errors.len());
 
     let destination = Path::new(destination);
+    if !destination.join("src/ffi.rs").exists() {
+        return Err(Error::Io(
+            "src not found, make sure output is libfmod project directory".to_string(),
+        ));
+    }
     let code = ffi::generate(&api)?;
     fs::write(destination.join("src/ffi.rs"), code)?;
     let code = lib::generate(&api)?;
@@ -218,11 +230,19 @@ fn generate_lib_fmod(source: &str, destination: &str) -> Result<(), Error> {
 }
 
 const FMOD_SDK_PATH: &str = "C:\\Program Files (x86)\\FMOD SoundSystem\\FMOD Studio API Windows";
+const OUTPUT_DIR: &str = "../libfmod";
 
 fn main() {
-    let mut args = env::args();
-    let source = args.nth(1).unwrap_or(FMOD_SDK_PATH.to_string());
-    let destination = args.nth(2).unwrap_or("../libfmod".to_string());
+    let mut args: Vec<String> = env::args().collect();
+    let source = match args.get(1) {
+        None => FMOD_SDK_PATH,
+        Some(source) => source,
+    };
+    let destination = match args.get(2) {
+        None => OUTPUT_DIR,
+        Some(destination) => destination,
+    };
+    println!("source {} {}", source, destination);
     if let Err(error) = generate_lib_fmod(&source, &destination) {
         println!("Unable to generate libfmod, {:?}", error);
     }
