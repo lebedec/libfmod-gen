@@ -283,7 +283,6 @@ pub fn generate_field(structure: &Structure, field: &Field, api: &Api) -> TokenS
             Some(dimension)
         }
     };
-
     let field_type = format_rust_type(
         &field.field_type,
         &field.as_const,
