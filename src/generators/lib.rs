@@ -136,7 +136,7 @@ pub fn format_rust_type(
             ("*mut *mut", "float") => quote! { Vec<f32> },
             ("*mut *mut", "char") => quote! { Vec<String> },
             ("", "unsigned char") => quote! { u8 },
-            ("", "char") => quote! { i8 },
+            ("", "char") => quote! { c_char },
             ("", "int") => quote! { i32 },
             ("", "unsigned int") => quote! { u32 },
             ("", "short") => quote! { i16 },
@@ -283,28 +283,6 @@ pub fn generate_field(structure: &Structure, field: &Field, api: &Api) -> TokenS
             Some(dimension)
         }
     };
-
-    // handle ("", "char") case
-    if let Type::FundamentalType(fname) = &field.field_type {
-        let ptr = describe_pointer(&field.as_const, &field.pointer);
-        if fname == "char" && ptr == "" {
-            return if let Some(dimension) = &as_array {
-                quote! {
-                    #[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
-                    pub #name: [u8; #dimension as usize],
-                    #[cfg(not(any(target_arch = "arm", target_arch = "aarch64")))]
-                    pub #name: [i8; #dimension as usize]
-                }
-            } else {
-                quote! {
-                    #[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
-                    pub #name: u8,
-                    #[cfg(not(any(target_arch = "arm", target_arch = "aarch64")))]
-                    pub #name: i8
-                }
-            };
-        }
-    }
 
     let field_type = format_rust_type(
         &field.field_type,
