@@ -226,5 +226,20 @@ impl Api {
                 }
             },
         );
+        self.overriding.insert("FMOD_Studio_Bank_GetEventList".to_string(), quote! {
+            pub fn get_event_list(&self, capacity: i32) -> Result<(Vec<EventDescription>, i32), Error> {
+                unsafe {
+                    let mut vec = vec![null_mut(); capacity as usize];
+                    let mut count = i32::default();
+                    match ffi::FMOD_Studio_Bank_GetEventList(self.pointer, vec.as_mut_ptr(), capacity, &mut count)
+                    {
+                        ffi::FMOD_OK => {
+                            Ok((vec.iter().map(| &x | { EventDescription::from(x) }).collect(), count))
+                        },
+                        error => Err(err_fmod!("FMOD_Studio_Bank_GetEventList", error)),
+                    }
+                }
+            }
+        });
     }
 }
