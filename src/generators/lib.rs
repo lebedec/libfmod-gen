@@ -777,9 +777,10 @@ fn map_input(argument: &Argument, api: &Api) -> InArgument {
     }
 }
 
-fn map_output(argument: &Argument, api: &Api) -> OutArgument {
+fn map_output(argument: &Argument, function: &Function, api: &Api) -> OutArgument {
     let pointer = ffi::describe_pointer(&argument.as_const, &argument.pointer);
     let arg = format_argument_ident(&argument.name);
+
     match &argument.argument_type {
         FundamentalType(type_name) => match &format!("{}:{}", pointer, type_name)[..] {
             "*mut:char" => OutArgument {
@@ -835,6 +836,7 @@ fn map_output(argument: &Argument, api: &Api) -> OutArgument {
         UserType(user_type) => {
             let type_name = format_struct_ident(&user_type);
             let ident = format_ident!("{}", user_type);
+
             match (pointer, api.describe_user_type(&user_type)) {
                 ("*mut", UserTypeDesc::TypeAlias) => match &user_type[..] {
                     "FMOD_BOOL" => OutArgument {
@@ -1025,13 +1027,115 @@ impl Signature {
             self.inputs.push(quote! { &mut numpoints });
             return true;
         }
-
         if function.name == "FMOD_ChannelGroup_Get3DCustomRolloff" && argument.name == "points" {
             self.targets.push(quote! { let mut points = null_mut(); });
             self.inputs.push(quote! { &mut points });
             self.outputs
                 .push(quote! { to_vec!(points, numpoints, Vector::try_from)? });
             self.return_types.push(quote! { Vec<Vector> });
+            return true;
+        }
+
+        if function.name == "FMOD_Studio_Bank_GetEventList" && argument.name == "count" {
+            self.targets
+                .push(quote! { let mut count = i32::default(); });
+            self.inputs.push(quote! { &mut count });
+            return true;
+        }
+        if function.name == "FMOD_Studio_Bank_GetEventList" && argument.name == "array" {
+            self.targets
+                .push(quote! { let mut array = vec![null_mut(); capacity as usize]; });
+            self.inputs.push(quote! { array.as_mut_ptr() });
+            self.outputs
+                .push(quote! { array.into_iter().take(count as usize).map(EventDescription::from).collect() });
+            self.return_types.push(quote! { Vec<EventDescription> });
+            return true;
+        }
+
+        if function.name == "FMOD_Studio_Bank_GetBusList" && argument.name == "count" {
+            self.targets
+                .push(quote! { let mut count = i32::default(); });
+            self.inputs.push(quote! { &mut count });
+            return true;
+        }
+        if function.name == "FMOD_Studio_Bank_GetBusList" && argument.name == "array" {
+            self.targets
+                .push(quote! { let mut array = vec![null_mut(); capacity as usize]; });
+            self.inputs.push(quote! { array.as_mut_ptr() });
+            self.outputs
+                .push(quote! { array.into_iter().take(count as usize).map(Bus::from).collect() });
+            self.return_types.push(quote! { Vec<Bus> });
+            return true;
+        }
+
+        if function.name == "FMOD_Studio_Bank_GetVCAList" && argument.name == "count" {
+            self.targets
+                .push(quote! { let mut count = i32::default(); });
+            self.inputs.push(quote! { &mut count });
+            return true;
+        }
+        if function.name == "FMOD_Studio_Bank_GetVCAList" && argument.name == "array" {
+            self.targets
+                .push(quote! { let mut array = vec![null_mut(); capacity as usize]; });
+            self.inputs.push(quote! { array.as_mut_ptr() });
+            self.outputs
+                .push(quote! { array.into_iter().take(count as usize).map(Vca::from).collect() });
+            self.return_types.push(quote! { Vec<Vca> });
+            return true;
+        }
+
+        if function.name == "FMOD_Studio_EventDescription_GetInstanceList"
+            && argument.name == "count"
+        {
+            self.targets
+                .push(quote! { let mut count = i32::default(); });
+            self.inputs.push(quote! { &mut count });
+            return true;
+        }
+        if function.name == "FMOD_Studio_EventDescription_GetInstanceList"
+            && argument.name == "array"
+        {
+            self.targets
+                .push(quote! { let mut array = vec![null_mut(); capacity as usize]; });
+            self.inputs.push(quote! { array.as_mut_ptr() });
+            self.outputs.push(quote! { array.into_iter().take(count as usize).map(EventInstance::from).collect() });
+            self.return_types.push(quote! { Vec<EventInstance> });
+            return true;
+        }
+
+        if function.name == "FMOD_Studio_System_GetBankList" && argument.name == "count" {
+            self.targets
+                .push(quote! { let mut count = i32::default(); });
+            self.inputs.push(quote! { &mut count });
+            return true;
+        }
+        if function.name == "FMOD_Studio_System_GetBankList" && argument.name == "array" {
+            self.targets
+                .push(quote! { let mut array = vec![null_mut(); capacity as usize]; });
+            self.inputs.push(quote! { array.as_mut_ptr() });
+            self.outputs
+                .push(quote! { array.into_iter().take(count as usize).map(Bank::from).collect() });
+            self.return_types.push(quote! { Vec<Bank> });
+            return true;
+        }
+
+        if function.name == "FMOD_Studio_System_GetParameterDescriptionList"
+            && argument.name == "count"
+        {
+            self.targets
+                .push(quote! { let mut count = i32::default(); });
+            self.inputs.push(quote! { &mut count });
+            return true;
+        }
+        if function.name == "FMOD_Studio_System_GetParameterDescriptionList"
+            && argument.name == "array"
+        {
+            self.targets
+                .push(quote! { let mut array = vec![ffi::FMOD_STUDIO_PARAMETER_DESCRIPTION::default(); capacity as usize]; });
+            self.inputs.push(quote! { array.as_mut_ptr() });
+            self.outputs
+                .push(quote! { array.into_iter().take(count as usize).map(ParameterDescription::try_from).collect::<Result<_, Error>>()? });
+            self.return_types.push(quote! { Vec<ParameterDescription> });
             return true;
         }
 
@@ -1067,7 +1171,7 @@ pub fn generate_method(owner: &str, function: &Function, api: &Api) -> TokenStre
             match api.get_modifier(&function.name, &argument.name) {
                 Modifier::None => signature += map_input(argument, api),
                 Modifier::Opt => signature += map_optional(argument, api),
-                Modifier::Out => signature += map_output(argument, api),
+                Modifier::Out => signature += map_output(argument, function, api),
             }
         }
     }
