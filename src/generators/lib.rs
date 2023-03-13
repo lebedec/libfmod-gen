@@ -1384,20 +1384,24 @@ pub fn generate_lib_code(api: &Api) -> Result<TokenStream, Error> {
         impl Display for Error {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                 match self {
-                    Error::Fmod { function,code,message } => {
+                    Error::Fmod {
+                        function,
+                        code,
+                        message,
+                    } => {
                         write!(f, "{}: {} ({})", function, message, code)
                     }
                     Error::EnumBindgen { enumeration, value } => {
-                        write!(f, "{}: {}", enumeration, value)
+                        write!(f, "FMOD returns unexpected value {} for {} enum", value, enumeration)
                     }
-                    Error::String(error) => {
-                        write!(f, "{}", error)
+                    Error::String(_) => {
+                        write!(f, "invalid UTF-8 when converting C string")
                     }
-                    Error::StringNul(error) => {
-                        write!(f, "{}", error)
+                    Error::StringNul(_) => {
+                        write!(f, "nul byte was found in the middle, C strings can't contain it")
                     }
                     Error::NotDspFft => {
-                        write!(f, "NotDspFft")
+                        write!(f, "trying get FFT from DSP which not FFT")
                     }
                 }
             }
