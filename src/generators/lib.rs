@@ -1210,6 +1210,12 @@ pub fn generate_opaque_type(key: &String, methods: &Vec<&Function>, api: &Api) -
             pointer: *mut ffi::#opaque_type,
         }
 
+        #[cfg(feature = "send-sync")]
+        unsafe impl Send for #name {}
+
+        #[cfg(feature = "send-sync")]
+        unsafe impl Sync for #name {}
+
         impl #name {
             #[inline]
             pub fn from(pointer: *mut ffi::#opaque_type) -> Self {
