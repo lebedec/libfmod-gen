@@ -9,7 +9,7 @@ extern crate proc_macro;
 #[macro_use]
 extern crate pest_derive;
 
-use crate::generators::{ffi, lib};
+use crate::generators::{ffi, lib, flags};
 use crate::models::{Api, Error, Modifier, OpaqueType};
 use crate::parsers::{
     fmod, fmod_codec, fmod_common, fmod_docs, fmod_dsp, fmod_dsp_effects, fmod_errors, fmod_output,
@@ -225,6 +225,8 @@ fn generate_lib_fmod(source: &str, destination: &str) -> Result<(), Error> {
     fs::write(destination.join("src/ffi.rs"), code)?;
     let code = lib::generate(&api)?;
     fs::write(destination.join("src/lib.rs"), code)?;
+    let code = flags::generate_to_file(&api)?;
+    fs::write(destination.join("src/flags.rs"), code)?;
 
     Ok(())
 }

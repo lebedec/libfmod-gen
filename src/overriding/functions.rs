@@ -8,7 +8,7 @@ impl Api {
                 pub fn load_bank_memory(
                     &self,
                     buffer: &[u8],
-                    flags: ffi::FMOD_STUDIO_LOAD_BANK_FLAGS,
+                    flags: impl Into<ffi::FMOD_STUDIO_LOAD_BANK_FLAGS>,
                 ) -> Result<Bank, Error> {
                     unsafe {
                         let mut bank = null_mut();
@@ -17,7 +17,7 @@ impl Api {
                             buffer.as_ptr() as *const std::os::raw::c_char,
                             buffer.len() as std::os::raw::c_int,
                             LoadMemoryMode::Memory.into(),
-                            flags,
+                            flags.into(),
                             &mut bank,
                         ) {
                             ffi::FMOD_OK => Ok(Bank::from(bank)),

@@ -749,8 +749,8 @@ fn map_input(argument: &Argument, api: &Api) -> InArgument {
                     input: quote! { #argument.into() },
                 },
                 ("", UserTypeDesc::Flags) => InArgument {
-                    param: quote! { #argument: ffi::#ident },
-                    input: quote! { #argument },
+                    param: quote! { #argument: impl Into<ffi::#ident> },
+                    input: quote! { #argument.into() },
                 },
                 ("", UserTypeDesc::Enumeration) => InArgument {
                     param: quote! { #argument: #rust_type },
@@ -1210,6 +1210,10 @@ pub fn generate_opaque_type(key: &String, methods: &Vec<&Function>, api: &Api) -
             pointer: *mut ffi::#opaque_type,
         }
 
+        unsafe impl Send for #name {}
+
+        unsafe impl Sync for #name {}
+
         impl #name {
             #[inline]
             pub fn from(pointer: *mut ffi::#opaque_type) -> Self {
@@ -1364,6 +1368,10 @@ pub fn generate_lib_code(api: &Api) -> Result<TokenStream, Error> {
         use std::ptr::{null, null_mut};
         use std::slice;
         pub mod ffi;
+        #[cfg(feature = "flags")]
+        mod flags;
+        #[cfg(feature = "flags")]
+        pub use flags::*;
 
         #[derive(Debug)]
         pub enum Error {
