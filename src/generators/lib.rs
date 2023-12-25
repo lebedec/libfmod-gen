@@ -777,7 +777,7 @@ fn map_input(argument: &Argument, api: &Api) -> InArgument {
     }
 }
 
-fn map_output(argument: &Argument, function: &Function, api: &Api) -> OutArgument {
+fn map_output(argument: &Argument, _function: &Function, api: &Api) -> OutArgument {
     let pointer = ffi::describe_pointer(&argument.as_const, &argument.pointer);
     let arg = format_argument_ident(&argument.name);
 

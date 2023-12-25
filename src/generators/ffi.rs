@@ -379,10 +379,9 @@ pub fn generate_function(function: &Function) -> TokenStream {
     }
 }
 
-pub fn generate_extern(link: &String, api: &Vec<Function>) -> TokenStream {
+pub fn generate_extern(_link: &String, api: &Vec<Function>) -> TokenStream {
     let functions = api.iter().map(generate_function);
     quote! {
-        #[link(name = #link)]
         extern "C" {
             #(#functions)*
         }

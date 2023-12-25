@@ -1,8 +1,7 @@
 use crate::models::{Api, Error, Flag, Flags};
 
-use convert_case::{Case, Casing};
-use quote::__private::{Ident, TokenStream};
 use crate::generators::dictionary::RENAMES;
+use convert_case::{Case, Casing};
 
 fn format_flags_struct_ident(key: &str) -> String {
     let key = key.replace("FMOD_STUDIO_SYSTEM_CALLBACK", "STUDIO_SYSTEM_CALLBACK");
@@ -33,7 +32,11 @@ fn get_shared_prefix(flags: &Vec<Flag>) -> String {
             }
         }
     }
-    let words: Vec<String> = pattern.iter().take(words).map(ToString::to_string).collect();
+    let words: Vec<String> = pattern
+        .iter()
+        .take(words)
+        .map(ToString::to_string)
+        .collect();
     words.join("_")
 }
 
@@ -70,18 +73,22 @@ pub fn generate_flags(flags: &Flags) -> (String, String) {
 
     let flags = &flags.name;
     let variants = variants.join("\n");
-    let definition = format!(r#"
+    let definition = format!(
+        r#"
     pub struct {name}: ffi::{flags} {{
 {variants}
     }}
-    "#);
-    let into = format!(r#"
+    "#
+    );
+    let into = format!(
+        r#"
 impl Into<ffi::{flags}> for {name} {{
     fn into(self) -> ffi::{flags} {{
         self.bits
     }}
 }}
-    "#);
+    "#
+    );
     (definition, into)
 }
 

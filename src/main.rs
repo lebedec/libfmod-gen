@@ -9,7 +9,7 @@ extern crate proc_macro;
 #[macro_use]
 extern crate pest_derive;
 
-use crate::generators::{ffi, lib, flags};
+use crate::generators::{ffi, flags, lib};
 use crate::models::{Api, Error, Modifier, OpaqueType};
 use crate::parsers::{
     fmod, fmod_codec, fmod_common, fmod_docs, fmod_dsp, fmod_dsp_effects, fmod_errors, fmod_output,
@@ -235,7 +235,7 @@ const FMOD_SDK_PATH: &str = "C:\\Program Files (x86)\\FMOD SoundSystem\\FMOD Stu
 const OUTPUT_DIR: &str = "../libfmod";
 
 fn main() {
-    let mut args: Vec<String> = env::args().collect();
+    let args: Vec<String> = env::args().collect();
     let source = match args.get(1) {
         None => FMOD_SDK_PATH,
         Some(source) => source,
