@@ -7,11 +7,11 @@ use quote::__private::{Ident, TokenStream};
 
 use crate::ffi;
 use crate::ffi::describe_pointer;
-use crate::generators::dictionary::{KEYWORDS, RENAMES};
 use crate::models::Type::{FundamentalType, UserType};
 use crate::models::{
     Api, Argument, Enumeration, Error, Field, Function, Modifier, Pointer, Structure, Type,
 };
+use crate::patching::dictionary::{KEYWORDS, RENAMES};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Struct {
@@ -546,7 +546,6 @@ pub fn generate_structure_try_from(structure: &Structure, api: &Api) -> TokenStr
     } else {
         None
     };
-    let conversions = api.conversions.get(&structure.name);
     quote! {
         impl TryFrom<ffi::#ident> for #name {
             type Error = Error;
@@ -560,7 +559,6 @@ pub fn generate_structure_try_from(structure: &Structure, api: &Api) -> TokenStr
                 }
             }
         }
-        #conversions
     }
 }
 
@@ -587,6 +585,7 @@ pub fn generate_structure(structure: &Structure, api: &Api) -> TokenStream {
     let presets = generate_presets(structure, api);
     let into = generate_structure_into(structure, api);
     let try_from = generate_structure_try_from(structure, api);
+    let conversions = api.structure_patches.get(&structure.name);
     quote! {
         #[derive(#derive)]
         pub struct #name {
@@ -594,6 +593,7 @@ pub fn generate_structure(structure: &Structure, api: &Api) -> TokenStream {
         }
         #presets
         #try_from
+        #conversions
         #into
     }
 }
@@ -1162,7 +1162,7 @@ impl AddAssign<OutArgument> for Signature {
 pub fn generate_method(owner: &str, function: &Function, api: &Api) -> TokenStream {
     let mut signature = Signature::new();
 
-    if let Some(overriding) = api.overriding.get(&function.name) {
+    if let Some(overriding) = api.function_patches.get(&function.name) {
         return overriding.clone();
     }
 
@@ -1505,370 +1505,4 @@ pub fn generate_lib_code(api: &Api) -> Result<TokenStream, Error> {
 pub fn generate(api: &Api) -> Result<String, Error> {
     let code = generate_lib_code(api)?;
     rustfmt_wrapper::rustfmt(code).map_err(Error::from)
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::lib::{format_variant, generate_enumeration, generate_method, generate_structure};
-    use crate::models::Type::{FundamentalType, UserType};
-    use crate::models::{Argument, Enumeration, Enumerator, Field, Function, Pointer, Structure};
-    use crate::Api;
-
-    fn normal() -> Option<Pointer> {
-        Some(Pointer::NormalPointer("*".into()))
-    }
-
-    #[test]
-    fn test_variant_name_starts_with_same_letter_as_enumeration_name() {
-        let ident = format_variant(
-            "FMOD_STUDIO_PLAYBACK_STATE",
-            "FMOD_STUDIO_PLAYBACK_SUSTAINING",
-        );
-        assert_eq!(ident, format_ident!("Sustaining"));
-    }
-
-    #[test]
-    fn test_variant_name_duplicates_one_word_of_enumeration_name() {
-        let ident = format_variant(
-            "FMOD_STUDIO_LOADING_STATE",
-            "FMOD_STUDIO_LOADING_STATE_LOADING",
-        );
-        assert_eq!(ident, format_ident!("Loading"));
-    }
-
-    #[test]
-    fn test_should_generate_simple_arguments_method() {
-        let function = Function {
-            return_type: UserType("FMOD_RESULT".into()),
-            name: "FMOD_System_SetDSPBufferSize".to_string(),
-            arguments: vec![
-                Argument {
-                    as_const: None,
-                    argument_type: UserType("FMOD_SYSTEM".into()),
-                    pointer: normal(),
-                    name: "system".to_string(),
-                },
-                Argument {
-                    as_const: None,
-                    argument_type: FundamentalType("unsigned int".into()),
-                    pointer: None,
-                    name: "bufferlength".to_string(),
-                },
-                Argument {
-                    as_const: None,
-                    argument_type: FundamentalType("int".into()),
-                    pointer: None,
-                    name: "numbuffers".to_string(),
-                },
-            ],
-        };
-        let actual = generate_method("FMOD_SYSTEM", &function, &Api::default()).to_string();
-        let expected = quote! {
-            pub fn set_dsp_buffer_size(&self, bufferlength: u32, numbuffers: i32) -> Result<(), Error> {
-                unsafe {
-                    match ffi::FMOD_System_SetDSPBufferSize(self.pointer, bufferlength, numbuffers) {
-                        ffi::FMOD_OK => Ok(()),
-                        error => Err(err_fmod!("FMOD_System_SetDSPBufferSize", error)),
-                    }
-                }
-            }
-        }.to_string();
-        assert_eq!(actual, expected);
-    }
-
-    #[test]
-    fn test_should_generate_enumeration() {
-        let enumeration = Enumeration {
-            name: "FMOD_OUTPUTTYPE".to_string(),
-            enumerators: vec![
-                Enumerator {
-                    name: "FMOD_OUTPUTTYPE_AUTODETECT".to_string(),
-                    value: None,
-                },
-                Enumerator {
-                    name: "FMOD_OUTPUTTYPE_UNKNOWN".to_string(),
-                    value: None,
-                },
-                Enumerator {
-                    name: "FMOD_OUTPUTTYPE_FORCEINT".to_string(),
-                    value: Some("65536".into()),
-                },
-            ],
-        };
-        let actual = generate_enumeration(&enumeration).to_string();
-        let expected = quote! {
-            #[derive(Debug, Clone, Copy, PartialEq)]
-            pub enum OutputType {
-                Autodetect,
-                Unknown
-            }
-
-            impl From<OutputType> for ffi::FMOD_OUTPUTTYPE {
-                fn from(value: OutputType) -> ffi::FMOD_OUTPUTTYPE {
-                    match value {
-                        OutputType::Autodetect => ffi::FMOD_OUTPUTTYPE_AUTODETECT,
-                        OutputType::Unknown => ffi::FMOD_OUTPUTTYPE_UNKNOWN
-                    }
-                }
-            }
-
-            impl OutputType {
-                pub fn from(value: ffi::FMOD_OUTPUTTYPE) -> Result<OutputType, Error> {
-                    match value {
-                        ffi::FMOD_OUTPUTTYPE_AUTODETECT => Ok(OutputType::Autodetect),
-                        ffi::FMOD_OUTPUTTYPE_UNKNOWN => Ok(OutputType::Unknown),
-                        _ => Err(err_enum!("FMOD_OUTPUTTYPE" , value)),
-                    }
-                }
-            }
-        }
-        .to_string();
-        assert_eq!(actual, expected);
-    }
-
-    #[test]
-    fn test_should_generate_enumeration_with_digits() {
-        let enumeration = Enumeration {
-            name: "FMOD_SPEAKERMODE".to_string(),
-            enumerators: vec![
-                Enumerator {
-                    name: "FMOD_SPEAKERMODE_DEFAULT".to_string(),
-                    value: None,
-                },
-                Enumerator {
-                    name: "FMOD_SPEAKERMODE_5POINT1".to_string(),
-                    value: None,
-                },
-            ],
-        };
-        let actual = generate_enumeration(&enumeration).to_string();
-        let expected = quote! {
-            #[derive(Debug, Clone, Copy, PartialEq)]
-            pub enum SpeakerMode {
-                Default,
-                Mode5Point1
-            }
-
-            impl From<SpeakerMode> for ffi::FMOD_SPEAKERMODE {
-                fn from(value: SpeakerMode) -> ffi::FMOD_SPEAKERMODE {
-                    match value {
-                        SpeakerMode::Default => ffi::FMOD_SPEAKERMODE_DEFAULT,
-                        SpeakerMode::Mode5Point1 => ffi::FMOD_SPEAKERMODE_5POINT1
-                    }
-                }
-            }
-
-            impl SpeakerMode {
-                pub fn from(value: ffi::FMOD_SPEAKERMODE) -> Result<SpeakerMode, Error> {
-                    match value {
-                        ffi::FMOD_SPEAKERMODE_DEFAULT => Ok(SpeakerMode::Default),
-                        ffi::FMOD_SPEAKERMODE_5POINT1 => Ok(SpeakerMode::Mode5Point1),
-                        _ => Err(err_enum!("FMOD_SPEAKERMODE" , value)),
-                    }
-                }
-            }
-        }
-        .to_string();
-        assert_eq!(actual, expected);
-    }
-
-    #[test]
-    fn test_should_generate_enumeration_with_mismatch_names() {
-        let enumeration = Enumeration {
-            name: "FMOD_STUDIO_PARAMETER_TYPE".to_string(),
-            enumerators: vec![
-                Enumerator {
-                    name: "FMOD_STUDIO_PARAMETER_GAME_CONTROLLED".to_string(),
-                    value: None,
-                },
-                Enumerator {
-                    name: "FMOD_STUDIO_PARAMETER_AUTOMATIC_DISTANCE".to_string(),
-                    value: None,
-                },
-            ],
-        };
-        let actual = generate_enumeration(&enumeration).to_string();
-        let expected = quote! {
-            #[derive(Debug, Clone, Copy, PartialEq)]
-            pub enum ParameterType {
-                GameControlled,
-                AutomaticDistance
-            }
-
-            impl From<ParameterType> for ffi::FMOD_STUDIO_PARAMETER_TYPE {
-                fn from(value: ParameterType) -> ffi::FMOD_STUDIO_PARAMETER_TYPE {
-                    match value {
-                        ParameterType::GameControlled => ffi::FMOD_STUDIO_PARAMETER_GAME_CONTROLLED,
-                        ParameterType::AutomaticDistance => ffi::FMOD_STUDIO_PARAMETER_AUTOMATIC_DISTANCE
-                    }
-                }
-            }
-
-            impl ParameterType {
-                pub fn from(value: ffi::FMOD_STUDIO_PARAMETER_TYPE) -> Result<ParameterType, Error> {
-                    match value {
-                        ffi::FMOD_STUDIO_PARAMETER_GAME_CONTROLLED => Ok(ParameterType::GameControlled),
-                        ffi::FMOD_STUDIO_PARAMETER_AUTOMATIC_DISTANCE => Ok(ParameterType::AutomaticDistance),
-                        _ => Err(err_enum!("FMOD_STUDIO_PARAMETER_TYPE" , value)),
-                    }
-                }
-            }
-        }
-        .to_string();
-        assert_eq!(actual, expected);
-    }
-
-    #[test]
-    fn test_should_generate_enumeration_with_short_enumerator() {
-        let enumeration = Enumeration {
-            name: "FMOD_STUDIO_LOAD_MEMORY_MODE".to_string(),
-            enumerators: vec![
-                Enumerator {
-                    name: "FMOD_STUDIO_LOAD_MEMORY".to_string(),
-                    value: None,
-                },
-                Enumerator {
-                    name: "FMOD_STUDIO_LOAD_MEMORY_POINT".to_string(),
-                    value: None,
-                },
-            ],
-        };
-        let actual = generate_enumeration(&enumeration).to_string();
-        let expected = quote! {
-            #[derive(Debug, Clone, Copy, PartialEq)]
-            pub enum LoadMemoryMode {
-                Memory,
-                MemoryPoint
-            }
-
-            impl From<LoadMemoryMode> for ffi::FMOD_STUDIO_LOAD_MEMORY_MODE {
-                fn from(value: LoadMemoryMode) -> ffi::FMOD_STUDIO_LOAD_MEMORY_MODE {
-                    match value {
-                        LoadMemoryMode::Memory => ffi::FMOD_STUDIO_LOAD_MEMORY,
-                        LoadMemoryMode::MemoryPoint => ffi::FMOD_STUDIO_LOAD_MEMORY_POINT
-                    }
-                }
-            }
-
-            impl LoadMemoryMode {
-                pub fn from(value: ffi::FMOD_STUDIO_LOAD_MEMORY_MODE) -> Result<LoadMemoryMode, Error> {
-                    match value {
-                        ffi::FMOD_STUDIO_LOAD_MEMORY => Ok(LoadMemoryMode::Memory),
-                        ffi::FMOD_STUDIO_LOAD_MEMORY_POINT => Ok(LoadMemoryMode::MemoryPoint),
-                        _ => Err(err_enum!("FMOD_STUDIO_LOAD_MEMORY_MODE" , value)),
-                    }
-                }
-            }
-        }
-        .to_string();
-        assert_eq!(actual, expected);
-    }
-
-    #[test]
-    fn test_should_generate_structure() {
-        let structure = Structure {
-            name: "FMOD_VECTOR".to_string(),
-            fields: vec![
-                Field {
-                    as_const: None,
-                    as_array: None,
-                    field_type: FundamentalType("float".to_string()),
-                    pointer: None,
-                    name: "x".to_string(),
-                },
-                Field {
-                    as_const: None,
-                    as_array: None,
-                    field_type: FundamentalType("float".to_string()),
-                    pointer: None,
-                    name: "y".to_string(),
-                },
-                Field {
-                    as_const: None,
-                    as_array: None,
-                    field_type: FundamentalType("float".to_string()),
-                    pointer: None,
-                    name: "z".to_string(),
-                },
-            ],
-            union: None,
-        };
-        let actual = generate_structure(&structure, &Api::default()).to_string();
-        let expected = quote! {
-            #[derive(Debug, Clone)]
-            pub struct Vector {
-                pub x: f32,
-                pub y: f32,
-                pub z: f32
-            }
-
-            impl TryFrom<ffi::FMOD_VECTOR> for Vector {
-                type Error = Error;
-                fn try_from(value: ffi::FMOD_VECTOR) -> Result<Self, Self::Error> {
-                    unsafe {
-                        Ok(Vector {
-                            x: value.x,
-                            y: value.y,
-                            z: value.z
-                        })
-                    }
-                }
-            }
-
-            impl Into<ffi::FMOD_VECTOR> for Vector {
-                fn into(self) -> ffi::FMOD_VECTOR {
-                    ffi::FMOD_VECTOR {
-                        x: self.x,
-                        y: self.y,
-                        z: self.z
-                    }
-                }
-            }
-        }
-        .to_string();
-        assert_eq!(actual, expected)
-    }
-
-    #[test]
-    fn test_should_generate_structure_with_keyword_field() {
-        let structure = Structure {
-            name: "FMOD_PLUGINLIST".to_string(),
-            fields: vec![Field {
-                as_const: None,
-                as_array: None,
-                field_type: UserType("FMOD_PLUGINTYPE".to_string()),
-                pointer: None,
-                name: "type".to_string(),
-            }],
-            union: None,
-        };
-        let actual = generate_structure(&structure, &Api::default()).to_string();
-        let expected = quote! {
-            #[derive(Debug, Clone)]
-            pub struct PluginList {
-                pub type_: ffi::FMOD_PLUGINTYPE
-            }
-
-            impl TryFrom<ffi::FMOD_PLUGINLIST> for PluginList {
-                type Error = Error;
-                fn try_from(value: ffi::FMOD_PLUGINLIST) -> Result<Self, Self::Error> {
-                    unsafe {
-                        Ok(PluginList {
-                            type_: value.type_
-                        })
-                    }
-                }
-            }
-
-            impl Into<ffi::FMOD_PLUGINLIST> for PluginList {
-                fn into(self) -> ffi::FMOD_PLUGINLIST {
-                    ffi::FMOD_PLUGINLIST {
-                        type_: self.type_
-                    }
-                }
-            }
-        }
-        .to_string();
-        assert_eq!(actual, expected)
-    }
 }

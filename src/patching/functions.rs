@@ -1,8 +1,8 @@
 use crate::Api;
 
 impl Api {
-    pub fn override_functions(&mut self) {
-        self.overriding.insert(
+    pub fn patch_functions(&mut self) {
+        self.function_patches.insert(
             "FMOD_Studio_System_LoadBankMemory".to_string(),
             quote! {
                 pub fn load_bank_memory(
@@ -27,7 +27,7 @@ impl Api {
                 }
             },
         );
-        self.overriding.insert(
+        self.function_patches.insert(
             "FMOD_Studio_Bank_GetPath".to_string(),
             quote! {
                 pub fn get_path(&self) -> Result<String, Error> {
@@ -58,7 +58,7 @@ impl Api {
                 }
             }
         );
-        self.overriding.insert("FMOD_Studio_VCA_GetPath".to_string(), quote! {
+        self.function_patches.insert("FMOD_Studio_VCA_GetPath".to_string(), quote! {
             pub fn get_path(&self) -> Result<String, Error> {
                 unsafe {
                     let mut retrieved = i32::default();
@@ -82,7 +82,7 @@ impl Api {
                 }
             }
         });
-        self.overriding.insert("FMOD_Studio_Bus_GetPath".to_string(), quote! {
+        self.function_patches.insert("FMOD_Studio_Bus_GetPath".to_string(), quote! {
             pub fn get_path(&self) -> Result<String, Error> {
                 unsafe {
                     let mut retrieved = i32::default();
@@ -106,7 +106,7 @@ impl Api {
                 }
             }
         });
-        self.overriding.insert("FMOD_Studio_System_LookupPath".to_string(), quote! {
+        self.function_patches.insert("FMOD_Studio_System_LookupPath".to_string(), quote! {
             pub fn lookup_path(&self, id: Guid) -> Result<String, Error> {
                 unsafe {
                     let mut retrieved = i32::default();
@@ -132,7 +132,7 @@ impl Api {
                 }
             }
         });
-        self.overriding.insert("FMOD_Studio_EventDescription_GetPath".to_string(), quote! {
+        self.function_patches.insert("FMOD_Studio_EventDescription_GetPath".to_string(), quote! {
             pub fn get_path(&self) -> Result<String, Error> {
                 unsafe {
                     let mut retrieved = i32::default();
@@ -156,7 +156,7 @@ impl Api {
                 }
             }
         });
-        self.overriding.insert(
+        self.function_patches.insert(
             "FMOD_Studio_System_IsValid".to_string(),
             quote! {
                 pub fn is_valid(&self) -> bool {
@@ -166,7 +166,7 @@ impl Api {
                 }
             },
         );
-        self.overriding.insert(
+        self.function_patches.insert(
             "FMOD_Studio_EventDescription_IsValid".to_string(),
             quote! {
                 pub fn is_valid(&self) -> bool {
@@ -176,7 +176,7 @@ impl Api {
                 }
             },
         );
-        self.overriding.insert(
+        self.function_patches.insert(
             "FMOD_Studio_EventInstance_IsValid".to_string(),
             quote! {
                 pub fn is_valid(&self) -> bool {
@@ -186,7 +186,7 @@ impl Api {
                 }
             },
         );
-        self.overriding.insert(
+        self.function_patches.insert(
             "FMOD_Studio_Bus_IsValid".to_string(),
             quote! {
                 pub fn is_valid(&self) -> bool {
@@ -196,7 +196,7 @@ impl Api {
                 }
             },
         );
-        self.overriding.insert(
+        self.function_patches.insert(
             "FMOD_Studio_VCA_IsValid".to_string(),
             quote! {
                 pub fn is_valid(&self) -> bool {
@@ -206,7 +206,7 @@ impl Api {
                 }
             },
         );
-        self.overriding.insert(
+        self.function_patches.insert(
             "FMOD_Studio_Bank_IsValid".to_string(),
             quote! {
                 pub fn is_valid(&self) -> bool {
@@ -216,7 +216,7 @@ impl Api {
                 }
             },
         );
-        self.overriding.insert(
+        self.function_patches.insert(
             "FMOD_Studio_CommandReplay_IsValid".to_string(),
             quote! {
                 pub fn is_valid(&self) -> bool {

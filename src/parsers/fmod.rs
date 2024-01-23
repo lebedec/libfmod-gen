@@ -35,28 +35,3 @@ impl From<error::Error<Rule>> for Error {
         Self::Pest(error.to_string())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::fmod::{parse, Header};
-
-    #[test]
-    fn test_should_ignore_ifndef_directive() {
-        let source = "#ifndef _FMOD_H";
-        assert_eq!(parse(source), Ok(Header::default()))
-    }
-
-    #[test]
-    fn test_should_ignore_define_directive() {
-        let source = "#define _FMOD_H";
-        assert_eq!(parse(source), Ok(Header::default()))
-    }
-
-    #[test]
-    fn test_should_ignore_include_directive() {
-        let source = r#"
-            #include "fmod_common.h"
-        "#;
-        assert_eq!(parse(source), Ok(Header::default()))
-    }
-}

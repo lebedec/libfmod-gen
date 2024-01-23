@@ -163,6 +163,6 @@ pub struct Api {
     pub presets: Vec<Preset>,
     pub errors: ErrorStringMapping,
     pub modifiers: HashMap<String, Modifier>,
-    pub conversions: HashMap<String, TokenStream>,
-    pub overriding: HashMap<String, TokenStream>,
+    pub structure_patches: HashMap<String, TokenStream>,
+    pub function_patches: HashMap<String, TokenStream>,
 }

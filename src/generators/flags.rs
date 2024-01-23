@@ -1,6 +1,6 @@
 use crate::models::{Api, Error, Flag, Flags};
 
-use crate::generators::dictionary::RENAMES;
+use crate::patching::dictionary::RENAMES;
 use convert_case::{Case, Casing};
 
 fn format_flags_struct_ident(key: &str) -> String {

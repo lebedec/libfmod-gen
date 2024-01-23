@@ -10,7 +10,7 @@ extern crate proc_macro;
 extern crate pest_derive;
 
 use crate::generators::{ffi, flags, lib};
-use crate::models::{Api, Error, Modifier, OpaqueType};
+use crate::models::{Api, Error};
 use crate::parsers::{
     fmod, fmod_codec, fmod_common, fmod_docs, fmod_dsp, fmod_dsp_effects, fmod_errors, fmod_output,
     fmod_studio, fmod_studio_common,
@@ -20,8 +20,8 @@ use std::{env, fs};
 
 mod generators;
 mod models;
-mod overriding;
 mod parsers;
+mod patching;
 mod repr;
 
 fn generate_lib_fmod(source: &str, destination: &str) -> Result<(), Error> {
@@ -123,57 +123,6 @@ fn generate_lib_fmod(source: &str, destination: &str) -> Result<(), Error> {
         source.join("doc/FMOD API User Manual/studio-api-vca.html"),
     ])?;
 
-    // POST PROCESSING
-
-    if !api
-        .opaque_types
-        .iter()
-        .any(|opaque_type| opaque_type.name == "FMOD_STUDIO_SYSTEM")
-    {
-        api.opaque_types.push(OpaqueType {
-            name: "FMOD_STUDIO_SYSTEM".into(),
-        });
-    }
-    let not_specified_output = &[
-        "FMOD_Studio_CommandReplay_GetSystem+system",
-        "FMOD_Studio_CommandReplay_GetCommandString+buffer",
-        "FMOD_Studio_CommandReplay_GetPaused+paused",
-        "FMOD_Studio_CommandReplay_GetUserData+userdata",
-        "FMOD_Studio_EventDescription_Is3D+is3D",
-        "FMOD_Studio_System_GetCoreSystem+coresystem",
-        "FMOD_System_GetNumNestedPlugins+count",
-    ];
-    for key in not_specified_output {
-        api.modifiers.insert(key.to_string(), Modifier::Out);
-    }
-    let not_output = &[
-        "FMOD_System_Set3DNumListeners+numlisteners",
-        "FMOD_Channel_GetMixMatrix+inchannel_hop",
-        "FMOD_ChannelGroup_GetMixMatrix+inchannel_hop",
-    ];
-    for key in not_output {
-        api.modifiers.remove(&key.to_string());
-    }
-
-    api.conversions.insert("FMOD_DSP_PARAMETER_FFT".to_string(), quote! {
-        impl TryFrom<Dsp> for DspParameterFft {
-            type Error = Error;
-            fn try_from(dsp: Dsp) -> Result<Self, Self::Error> {
-                match dsp.get_type() {
-                    Ok(DspType::Fft) => {
-                        let (ptr, _, _) = dsp.get_parameter_data(ffi::FMOD_DSP_FFT_SPECTRUMDATA, 0)?;
-                        let fft = unsafe {
-                            *(ptr as *const ffi::FMOD_DSP_PARAMETER_FFT)
-                        };
-                        DspParameterFft::try_from(fft)
-                    },
-                    _ => Err(Error::NotDspFft)
-                }
-            }
-        }
-    });
-    api.override_functions();
-
     println!("FMOD API");
     println!("Opaque Types: {}", api.opaque_types.len());
     println!("Type Aliases: {}", api.type_aliases.len());
@@ -214,6 +163,8 @@ fn generate_lib_fmod(source: &str, destination: &str) -> Result<(), Error> {
     );
     println!("Parameter Modifiers: {}", api.modifiers.len());
     println!("Errors: {}", api.errors.errors.len());
+
+    api.patch_all();
 
     let destination = Path::new(destination);
     if !destination.join("src/ffi.rs").exists() {
