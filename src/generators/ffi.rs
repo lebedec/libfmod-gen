@@ -229,47 +229,6 @@ pub fn generate_flags(flags: &Flags) -> Result<TokenStream, Error> {
     })
 }
 
-pub fn generate_field_default(owner: &str, field: &Field) -> TokenStream {
-    let name = format_rust_ident(&field.name);
-    let ptr = describe_pointer(&field.as_const, &field.pointer);
-
-    let value = match (owner, &field.name[..]) {
-        ("FMOD_DSP_LOUDNESS_METER_INFO_TYPE", "loudnesshistogram") => {
-            quote! { [0.0; FMOD_DSP_LOUDNESS_METER_HISTOGRAM_SAMPLES as usize] }
-        }
-        ("FMOD_DSP_PARAMETER_FFT", "spectrum") => {
-            quote! { [null_mut(); 32] }
-        }
-        ("FMOD_STUDIO_ADVANCEDSETTINGS", "cbsize") => {
-            quote! { size_of::<FMOD_STUDIO_ADVANCEDSETTINGS>() as i32 }
-        }
-        ("FMOD_ADVANCEDSETTINGS", "cbSize") => {
-            quote! { size_of::<FMOD_ADVANCEDSETTINGS>() as i32 }
-        }
-        ("FMOD_CREATESOUNDEXINFO", "cbsize") => {
-            quote! { size_of::<FMOD_CREATESOUNDEXINFO>() as i32 }
-        }
-        _ => match &field.field_type {
-            FundamentalType(name) => match (ptr, &name[..]) {
-                ("*mut", _) => quote! { null_mut() },
-                ("*const", _) => quote! { null_mut() },
-                ("*mut *mut", _) => quote! { null_mut() },
-                ("*const *const", _) => quote! { null_mut() },
-                _ => quote! { Default::default() },
-            },
-            UserType(_) => match ptr {
-                "*mut" => quote! { null_mut() },
-                "*mut *mut" => quote! { null_mut() },
-                _ => quote! {  Default::default() },
-            },
-        },
-    };
-
-    quote! {
-        #name: #value
-    }
-}
-
 impl Field {
     pub fn array(&self) -> Option<TokenStream> {
         match &self.as_array {
@@ -296,34 +255,15 @@ pub fn generate_field(field: &Field) -> TokenStream {
 
 pub fn generate_structure_default(structure: &Structure) -> TokenStream {
     let name = format_ident!("{}", structure.name);
-    let defaults = structure
-        .fields
-        .iter()
-        .map(|field| generate_field_default(&structure.name, field));
-
-    let union_default = if structure.union.is_some() {
-        match &structure.name[..] {
-            "FMOD_STUDIO_USER_PROPERTY" => {
-                Some(quote! { ,union: FMOD_STUDIO_USER_PROPERTY_UNION { intvalue: 0 } })
-            }
-            "FMOD_DSP_PARAMETER_DESC" => Some(
-                quote! { ,union: FMOD_DSP_PARAMETER_DESC_UNION {floatdesc: Default::default()} },
-            ),
-            _ => None,
-        }
-    } else {
-        None
-    };
-
-    quote! {
-        impl Default for #name {
-            fn default() -> Self {
-                Self {
-                    #(#defaults),*
-                    #union_default
+    match Api::patch_ffi_structure_default(&structure.name) {
+        Some(definition) => definition,
+        None => quote! {
+            impl Default for #name {
+                fn default() -> Self {
+                    unsafe { std::mem::zeroed() }
                 }
             }
-        }
+        },
     }
 }
 
@@ -486,9 +426,7 @@ pub fn generate_ffi_code(api: &Api) -> Result<TokenStream, Error> {
         #![allow(non_camel_case_types)]
         #![allow(non_snake_case)]
         #![allow(unused_parens)]
-        use std::mem::size_of;
         use std::os::raw::{c_char, c_float, c_int, c_longlong, c_short, c_uchar, c_uint, c_ulonglong, c_ushort, c_void};
-        use std::ptr::null_mut;
 
         #(#opaque_types)*
         #(#type_aliases)*

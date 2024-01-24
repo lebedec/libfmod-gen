@@ -11,7 +11,7 @@ use crate::models::Type::{FundamentalType, UserType};
 use crate::models::{
     Api, Argument, Enumeration, Error, Field, Function, Modifier, Pointer, Structure, Type,
 };
-use crate::patching::dictionary::{ENUMERATOR_RENAMES, KEYWORDS, RENAMES};
+use crate::patching::dictionary::{ENUMERATOR_RENAMES, KEYWORDS};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Struct {
@@ -210,29 +210,10 @@ pub fn generate_enumeration(enumeration: &Enumeration) -> TokenStream {
 }
 
 pub fn generate_field(structure: &Structure, field: &Field, api: &Api) -> TokenStream {
-    match (&structure.name[..], &field.name[..]) {
-        ("FMOD_ADVANCEDSETTINGS", "cbSize") => {
-            return quote! {};
-        }
-        ("FMOD_STUDIO_ADVANCEDSETTINGS", "cbsize") => {
-            return quote! {};
-        }
-        ("FMOD_CREATESOUNDEXINFO", "cbsize") => {
-            return quote! {};
-        }
-        ("FMOD_DSP_DESCRIPTION", "numparameters") => {
-            return quote! {};
-        }
-        ("FMOD_DSP_PARAMETER_FFT", "spectrum") => {
-            return quote! {
-                pub spectrum: Vec<Vec<f32>>
-            };
-        }
-        ("FMOD_DSP_PARAMETER_FFT", "numchannels") => {
-            return quote! {};
-        }
+    match api.patch_field_definition(&structure.name[..], &field.name[..]) {
+        Some(definition) => return definition,
         _ => {}
-    }
+    };
 
     let name = format_argument_ident(&field.name);
     let as_array = match &field.as_array {

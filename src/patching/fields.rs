@@ -2,6 +2,31 @@ use crate::Api;
 use quote::__private::TokenStream;
 
 impl Api {
+    pub fn patch_field_definition(&self, structure: &str, field: &str) -> Option<TokenStream> {
+        let expression = match (structure, field) {
+            ("FMOD_ADVANCEDSETTINGS", "cbSize") => {
+                quote! {}
+            }
+            ("FMOD_STUDIO_ADVANCEDSETTINGS", "cbsize") => {
+                quote! {}
+            }
+            ("FMOD_CREATESOUNDEXINFO", "cbsize") => {
+                quote! {}
+            }
+            ("FMOD_DSP_DESCRIPTION", "numparameters") => {
+                quote! {}
+            }
+            ("FMOD_DSP_PARAMETER_FFT", "spectrum") => {
+                quote! { pub spectrum: Vec<Vec<f32>> }
+            }
+            ("FMOD_DSP_PARAMETER_FFT", "numchannels") => {
+                quote! {}
+            }
+            _ => return None,
+        };
+        Some(expression)
+    }
+
     pub fn patch_field_from_expression(&self, structure: &str, field: &str) -> Option<TokenStream> {
         let expression = match (structure, field) {
             ("FMOD_DSP_PARAMETER_3DATTRIBUTES_MULTI", "relative") => {

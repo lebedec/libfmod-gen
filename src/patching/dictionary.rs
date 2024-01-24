@@ -1,4 +1,3 @@
-use crate::generators::lib::Struct;
 use crate::models::Api;
 use convert_case::{Case, Casing};
 use std::collections::HashMap;
