@@ -4,7 +4,7 @@ use std::str::FromStr;
 use quote::__private::{Ident, LexError, Literal, TokenStream};
 use quote::quote;
 
-use crate::models::Type::{FundamentalType, UserType};
+use crate::models::Type::FundamentalType;
 use crate::models::{
     Api, Argument, Callback, Constant, Enumeration, Error, ErrorStringMapping, Field, Flags,
     Function, OpaqueType, Pointer, Preset, Structure, Type, TypeAlias, Union,
@@ -145,20 +145,9 @@ pub fn generate_enumeration(enumeration: &Enumeration) -> Result<TokenStream, Er
     })
 }
 
-const KEYWORDS: &[&str] = &[
-    "as", "break", "const", "continue", "crate", "else", "enum", "extern", "false", "fn", "for",
-    "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref", "return",
-    "self", "static", "struct", "super", "trait", "true", "type", "unsafe", "use", "where",
-    "while", "async", "await", "dyn", "try", "abstract", "become", "box", "do", "final", "macro",
-    "override", "priv", "typeof", "unsized", "virtual", "yield",
-];
-
-pub fn format_rust_ident(name: &String) -> Ident {
-    if KEYWORDS.contains(&&*name.to_lowercase()) {
-        format_ident!("{}_", name)
-    } else {
-        format_ident!("{}", name)
-    }
+pub fn format_rust_ident(name: &str) -> Ident {
+    let name = Api::patch_ident(&name);
+    format_ident!("{}", name)
 }
 
 pub fn generate_argument(argument: &Argument) -> TokenStream {

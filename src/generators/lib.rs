@@ -11,7 +11,6 @@ use crate::models::Type::{FundamentalType, UserType};
 use crate::models::{
     Api, Argument, Enumeration, Error, Field, Function, Modifier, Pointer, Structure, Type,
 };
-use crate::patching::dictionary::{ENUMERATOR_RENAMES, KEYWORDS};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Struct {
@@ -33,10 +32,7 @@ fn extract_struct_key(name: &str) -> String {
 }
 
 fn format_variant(enumeration: &str, name: &str) -> Ident {
-    let name = match ENUMERATOR_RENAMES.iter().find(|pair| pair.0 == name) {
-        None => name,
-        Some(pair) => pair.1,
-    };
+    let name = Api::patch_enumerator(name);
     let enumeration_words: Vec<&str> = enumeration.split("_").collect();
     let variant_words: Vec<&str> = name.split("_").collect();
     // enumeration:
@@ -76,11 +72,8 @@ fn format_struct_ident(key: &str) -> Ident {
 pub fn format_argument_ident(name: &str) -> Ident {
     let name = name.replace("3D", "-3d-");
     let name = name.to_case(Case::Snake);
-    if KEYWORDS.contains(&&*name) {
-        format_ident!("{}_", name)
-    } else {
-        format_ident!("{}", name)
-    }
+    let name = Api::patch_ident(&name);
+    format_ident!("{}", name)
 }
 
 pub fn format_rust_type(
@@ -210,7 +203,7 @@ pub fn generate_enumeration(enumeration: &Enumeration) -> TokenStream {
 }
 
 pub fn generate_field(structure: &Structure, field: &Field, api: &Api) -> TokenStream {
-    match api.patch_field_definition(&structure.name[..], &field.name[..]) {
+    match api.patch_rust_struct_field_definition(&structure.name[..], &field.name[..]) {
         Some(definition) => return definition,
         _ => {}
     };
@@ -248,7 +241,13 @@ pub fn generate_field_from(structure: &str, field: &Field, api: &Api) -> TokenSt
     let ptr = describe_pointer(&field.as_const, &field.pointer);
 
     let getter = match api.patch_field_from_expression(structure, &field.name[..]) {
-        Some(expression) => expression,
+        Some(expression) => {
+            if expression.is_empty() {
+                return expression;
+            } else {
+                expression
+            }
+        }
         _ => match &field.field_type {
             FundamentalType(name) => match (ptr, &name[..]) {
                 ("*const", "char") => quote! { to_string!(value.#value_name)? },
@@ -366,25 +365,14 @@ pub fn generate_structure_into(structure: &Structure, api: &Api) -> TokenStream 
     }
 }
 
-fn is_convertable(structure: &Structure, field: &Field) -> bool {
-    match (&structure.name[..], &field.name[..]) {
-        ("FMOD_ADVANCEDSETTINGS", "cbSize") => false,
-        ("FMOD_STUDIO_ADVANCEDSETTINGS", "cbsize") => false,
-        ("FMOD_CREATESOUNDEXINFO", "cbsize") => false,
-        ("FMOD_DSP_DESCRIPTION", "numparameters") => false,
-        ("FMOD_DSP_PARAMETER_FFT", "numchannels") => false,
-        _ => true,
-    }
-}
-
 pub fn generate_structure_try_from(structure: &Structure, api: &Api) -> TokenStream {
     let ident = format_ident!("{}", structure.name);
     let name = format_struct_ident(&structure.name);
     let conversion = structure
         .fields
         .iter()
-        .filter(|field| is_convertable(&structure, field))
-        .map(|field| generate_field_from(&structure.name, field, api));
+        .map(|field| generate_field_from(&structure.name, field, api))
+        .filter(|definition| !definition.is_empty());
     let union = if structure.union.is_some() {
         Some(quote! { ,union: value.union })
     } else {
@@ -411,8 +399,8 @@ pub fn generate_structure(structure: &Structure, api: &Api) -> TokenStream {
     let mut fields: Vec<TokenStream> = structure
         .fields
         .iter()
-        .filter(|field| is_convertable(&structure, field))
         .map(|field| generate_field(structure, field, api))
+        .filter(|definition| !definition.is_empty())
         .collect();
 
     let mut derive = quote! { Debug, Clone };
@@ -739,7 +727,7 @@ fn map_output(argument: &Argument, _function: &Function, api: &Api) -> OutArgume
     }
 }
 
-struct Signature {
+pub struct Signature {
     pub arguments: Vec<TokenStream>,
     pub inputs: Vec<TokenStream>,
     pub targets: Vec<TokenStream>,
@@ -775,216 +763,6 @@ impl Signature {
             quote_tuple(&self.return_types),
         )
     }
-
-    pub fn overwrites(&mut self, owner: &str, function: &Function, argument: &Argument) -> bool {
-        let pointer = ffi::describe_pointer(&argument.as_const, &argument.pointer);
-        if self.arguments.is_empty()
-            && argument.argument_type.is_user_type(owner)
-            && pointer == "*mut"
-        {
-            self.arguments.push(quote! { &self });
-            self.inputs.push(quote! { self.pointer });
-            return true;
-        }
-
-        if function.name == "FMOD_Studio_System_Create" && argument.name == "headerversion" {
-            self.inputs.push(quote! { ffi::FMOD_VERSION });
-            return true;
-        }
-
-        if function.name == "FMOD_System_Create" && argument.name == "headerversion" {
-            self.inputs.push(quote! { ffi::FMOD_VERSION });
-            return true;
-        }
-
-        // FMOD_Sound_Set3DCustomRolloff
-        if function.name == "FMOD_Sound_Set3DCustomRolloff" && argument.name == "numpoints" {
-            self.targets
-                .push(quote! { let numpoints = points.len() as i32; });
-            self.inputs.push(quote! { numpoints });
-            return true;
-        }
-        if function.name == "FMOD_Sound_Set3DCustomRolloff" && argument.name == "points" {
-            self.arguments.push(quote! { points: Vec<Vector> });
-            self.inputs
-                .push(quote! { vec_as_mut_ptr(points, |point| point.into()) });
-            return true;
-        }
-        if function.name == "FMOD_Sound_Get3DCustomRolloff" && argument.name == "numpoints" {
-            self.targets
-                .push(quote! { let mut numpoints = i32::default(); });
-            self.inputs.push(quote! { &mut numpoints });
-            return true;
-        }
-        if function.name == "FMOD_Sound_Get3DCustomRolloff" && argument.name == "points" {
-            self.targets.push(quote! { let mut points = null_mut(); });
-            self.inputs.push(quote! { &mut points });
-            self.outputs
-                .push(quote! { to_vec!(points, numpoints, Vector::try_from)? });
-            self.return_types.push(quote! { Vec<Vector> });
-            return true;
-        }
-
-        // FMOD_Channel_Set3DCustomRolloff
-        if function.name == "FMOD_Channel_Set3DCustomRolloff" && argument.name == "numpoints" {
-            self.targets
-                .push(quote! { let numpoints = points.len() as i32; });
-            self.inputs.push(quote! { numpoints });
-            return true;
-        }
-        if function.name == "FMOD_Channel_Set3DCustomRolloff" && argument.name == "points" {
-            self.arguments.push(quote! { points: Vec<Vector> });
-            self.inputs
-                .push(quote! { vec_as_mut_ptr(points, |point| point.into()) });
-            return true;
-        }
-        if function.name == "FMOD_Channel_Get3DCustomRolloff" && argument.name == "numpoints" {
-            self.targets
-                .push(quote! { let mut numpoints = i32::default(); });
-            self.inputs.push(quote! { &mut numpoints });
-            return true;
-        }
-        if function.name == "FMOD_Channel_Get3DCustomRolloff" && argument.name == "points" {
-            self.targets.push(quote! { let mut points = null_mut(); });
-            self.inputs.push(quote! { &mut points });
-            self.outputs
-                .push(quote! { to_vec!(points, numpoints, Vector::try_from)? });
-            self.return_types.push(quote! { Vec<Vector> });
-            return true;
-        }
-
-        if function.name == "FMOD_ChannelGroup_Set3DCustomRolloff" && argument.name == "numpoints" {
-            self.targets
-                .push(quote! { let numpoints = points.len() as i32; });
-            self.inputs.push(quote! { numpoints });
-            return true;
-        }
-        if function.name == "FMOD_ChannelGroup_Set3DCustomRolloff" && argument.name == "points" {
-            self.arguments.push(quote! { points: Vec<Vector> });
-            self.inputs
-                .push(quote! { vec_as_mut_ptr(points, |point| point.into()) });
-            return true;
-        }
-        if function.name == "FMOD_ChannelGroup_Get3DCustomRolloff" && argument.name == "numpoints" {
-            self.targets
-                .push(quote! { let mut numpoints = i32::default(); });
-            self.inputs.push(quote! { &mut numpoints });
-            return true;
-        }
-        if function.name == "FMOD_ChannelGroup_Get3DCustomRolloff" && argument.name == "points" {
-            self.targets.push(quote! { let mut points = null_mut(); });
-            self.inputs.push(quote! { &mut points });
-            self.outputs
-                .push(quote! { to_vec!(points, numpoints, Vector::try_from)? });
-            self.return_types.push(quote! { Vec<Vector> });
-            return true;
-        }
-
-        if function.name == "FMOD_Studio_Bank_GetEventList" && argument.name == "count" {
-            self.targets
-                .push(quote! { let mut count = i32::default(); });
-            self.inputs.push(quote! { &mut count });
-            return true;
-        }
-        if function.name == "FMOD_Studio_Bank_GetEventList" && argument.name == "array" {
-            self.targets
-                .push(quote! { let mut array = vec![null_mut(); capacity as usize]; });
-            self.inputs.push(quote! { array.as_mut_ptr() });
-            self.outputs
-                .push(quote! { array.into_iter().take(count as usize).map(EventDescription::from).collect() });
-            self.return_types.push(quote! { Vec<EventDescription> });
-            return true;
-        }
-
-        if function.name == "FMOD_Studio_Bank_GetBusList" && argument.name == "count" {
-            self.targets
-                .push(quote! { let mut count = i32::default(); });
-            self.inputs.push(quote! { &mut count });
-            return true;
-        }
-        if function.name == "FMOD_Studio_Bank_GetBusList" && argument.name == "array" {
-            self.targets
-                .push(quote! { let mut array = vec![null_mut(); capacity as usize]; });
-            self.inputs.push(quote! { array.as_mut_ptr() });
-            self.outputs
-                .push(quote! { array.into_iter().take(count as usize).map(Bus::from).collect() });
-            self.return_types.push(quote! { Vec<Bus> });
-            return true;
-        }
-
-        if function.name == "FMOD_Studio_Bank_GetVCAList" && argument.name == "count" {
-            self.targets
-                .push(quote! { let mut count = i32::default(); });
-            self.inputs.push(quote! { &mut count });
-            return true;
-        }
-        if function.name == "FMOD_Studio_Bank_GetVCAList" && argument.name == "array" {
-            self.targets
-                .push(quote! { let mut array = vec![null_mut(); capacity as usize]; });
-            self.inputs.push(quote! { array.as_mut_ptr() });
-            self.outputs
-                .push(quote! { array.into_iter().take(count as usize).map(Vca::from).collect() });
-            self.return_types.push(quote! { Vec<Vca> });
-            return true;
-        }
-
-        if function.name == "FMOD_Studio_EventDescription_GetInstanceList"
-            && argument.name == "count"
-        {
-            self.targets
-                .push(quote! { let mut count = i32::default(); });
-            self.inputs.push(quote! { &mut count });
-            return true;
-        }
-        if function.name == "FMOD_Studio_EventDescription_GetInstanceList"
-            && argument.name == "array"
-        {
-            self.targets
-                .push(quote! { let mut array = vec![null_mut(); capacity as usize]; });
-            self.inputs.push(quote! { array.as_mut_ptr() });
-            self.outputs.push(quote! { array.into_iter().take(count as usize).map(EventInstance::from).collect() });
-            self.return_types.push(quote! { Vec<EventInstance> });
-            return true;
-        }
-
-        if function.name == "FMOD_Studio_System_GetBankList" && argument.name == "count" {
-            self.targets
-                .push(quote! { let mut count = i32::default(); });
-            self.inputs.push(quote! { &mut count });
-            return true;
-        }
-        if function.name == "FMOD_Studio_System_GetBankList" && argument.name == "array" {
-            self.targets
-                .push(quote! { let mut array = vec![null_mut(); capacity as usize]; });
-            self.inputs.push(quote! { array.as_mut_ptr() });
-            self.outputs
-                .push(quote! { array.into_iter().take(count as usize).map(Bank::from).collect() });
-            self.return_types.push(quote! { Vec<Bank> });
-            return true;
-        }
-
-        if function.name == "FMOD_Studio_System_GetParameterDescriptionList"
-            && argument.name == "count"
-        {
-            self.targets
-                .push(quote! { let mut count = i32::default(); });
-            self.inputs.push(quote! { &mut count });
-            return true;
-        }
-        if function.name == "FMOD_Studio_System_GetParameterDescriptionList"
-            && argument.name == "array"
-        {
-            self.targets
-                .push(quote! { let mut array = vec![ffi::FMOD_STUDIO_PARAMETER_DESCRIPTION::default(); capacity as usize]; });
-            self.inputs.push(quote! { array.as_mut_ptr() });
-            self.outputs
-                .push(quote! { array.into_iter().take(count as usize).map(ParameterDescription::try_from).collect::<Result<_, Error>>()? });
-            self.return_types.push(quote! { Vec<ParameterDescription> });
-            return true;
-        }
-
-        return false;
-    }
 }
 
 impl AddAssign<InArgument> for Signature {
@@ -1011,7 +789,7 @@ pub fn generate_method(owner: &str, function: &Function, api: &Api) -> TokenStre
     }
 
     for argument in &function.arguments {
-        if !signature.overwrites(owner, function, argument) {
+        if !signature.patch_function_signature(owner, function, argument) {
             match api.get_modifier(&function.name, &argument.name) {
                 Modifier::None => signature += map_input(argument, api),
                 Modifier::Opt => signature += map_optional(argument, api),

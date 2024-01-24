@@ -183,6 +183,21 @@ pub const ENUMERATOR_RENAMES: &[(&str, &str)] = &[
 ];
 
 impl Api {
+    pub fn patch_ident(ident: &str) -> String {
+        if KEYWORDS.contains(&&*ident.to_lowercase()) {
+            format!("{}_", ident)
+        } else {
+            ident.to_string()
+        }
+    }
+
+    pub fn patch_enumerator(name: &str) -> String {
+        match ENUMERATOR_RENAMES.iter().find(|pair| pair.0 == name) {
+            None => name.to_string(),
+            Some(pair) => pair.1.to_string(),
+        }
+    }
+
     pub fn patch_variant_name(key: &str) -> String {
         let key = if key.starts_with("3D") {
             format!("{}3d", &key[2..]).to_case(Case::UpperCamel)
