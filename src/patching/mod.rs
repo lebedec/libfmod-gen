@@ -1,6 +1,7 @@
 use crate::models::Api;
 
 pub mod dictionary;
+mod fields;
 mod functions;
 mod post_processing;
 mod structures;

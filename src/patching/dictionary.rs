@@ -1,3 +1,6 @@
+use crate::generators::lib::Struct;
+use crate::models::Api;
+use convert_case::{Case, Casing};
 use std::collections::HashMap;
 
 lazy_static! {
@@ -171,3 +174,34 @@ pub const KEYWORDS: &[&str] = &[
     "while", "async", "await", "dyn", "try", "abstract", "become", "box", "do", "final", "macro",
     "override", "priv", "typeof", "unsized", "virtual", "yield",
 ];
+
+pub const ENUMERATOR_RENAMES: &[(&str, &str)] = &[
+    ("FMOD_STUDIO_LOAD_MEMORY", "FMOD_STUDIO_LOAD_MEMORY_MEMORY"),
+    (
+        "FMOD_STUDIO_LOAD_MEMORY_POINT",
+        "FMOD_STUDIO_LOAD_MEMORY_MEMORY_POINT",
+    ),
+];
+
+impl Api {
+    pub fn patch_variant_name(key: &str) -> String {
+        let key = if key.starts_with("3D") {
+            format!("{}3d", &key[2..]).to_case(Case::UpperCamel)
+        } else {
+            key.to_string()
+        };
+
+        let key = if key.starts_with("2D") {
+            format!("{}2d", &key[2..]).to_case(Case::UpperCamel)
+        } else {
+            key.to_string()
+        };
+
+        let name = key;
+        let name = match RENAMES.get(&name[..]) {
+            None => name,
+            Some(rename) => rename.to_string(),
+        };
+        name
+    }
+}

@@ -1,4 +1,6 @@
+use crate::patching::dictionary::RENAMES;
 use crate::Api;
+use convert_case::{Case, Casing};
 
 impl Api {
     pub fn patch_structures(&mut self) {
@@ -19,5 +21,20 @@ impl Api {
                 }
             }
         });
+    }
+
+    pub fn patch_structure_name(key: &str) -> String {
+        let key = key.replace("FMOD_RESULT", "FMOD_FMODRESULT");
+        let key = key.replace("FMOD_", "");
+        let key = key.replace("STUDIO_SYSTEM", "STUDIOSYSTEM");
+        let key = key.replace("STUDIO_ADVANCEDSETTINGS", "STUDIOADVANCEDSETTINGS");
+        let key = key.replace("STUDIO_CPU_USAGE", "STUDIOCPUUSAGE");
+        let key = key.replace("STUDIO_", "");
+        let name = key.to_case(Case::Pascal);
+        let name = match RENAMES.get(&name[..]) {
+            None => name,
+            Some(rename) => rename.to_string(),
+        };
+        name.to_string()
     }
 }

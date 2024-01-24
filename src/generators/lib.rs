@@ -11,7 +11,7 @@ use crate::models::Type::{FundamentalType, UserType};
 use crate::models::{
     Api, Argument, Enumeration, Error, Field, Function, Modifier, Pointer, Structure, Type,
 };
-use crate::patching::dictionary::{KEYWORDS, RENAMES};
+use crate::patching::dictionary::{ENUMERATOR_RENAMES, KEYWORDS, RENAMES};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Struct {
@@ -31,14 +31,6 @@ fn extract_struct_key(name: &str) -> String {
         None => name.to_string(),
     }
 }
-
-const ENUMERATOR_RENAMES: &[(&str, &str)] = &[
-    ("FMOD_STUDIO_LOAD_MEMORY", "FMOD_STUDIO_LOAD_MEMORY_MEMORY"),
-    (
-        "FMOD_STUDIO_LOAD_MEMORY_POINT",
-        "FMOD_STUDIO_LOAD_MEMORY_MEMORY_POINT",
-    ),
-];
 
 fn format_variant(enumeration: &str, name: &str) -> Ident {
     let name = match ENUMERATOR_RENAMES.iter().find(|pair| pair.0 == name) {
@@ -61,24 +53,8 @@ fn format_variant(enumeration: &str, name: &str) -> Ident {
         .collect::<Vec<&str>>()
         .join("_");
 
-    let key = if key.starts_with("3D") {
-        format!("{}3d", &key[2..])
-    } else {
-        key
-    };
-
-    let key = if key.starts_with("2D") {
-        format!("{}2d", &key[2..])
-    } else {
-        key
-    };
-
     let key = key.to_case(Case::UpperCamel);
-    let name = key;
-    let name = match RENAMES.get(&name[..]) {
-        None => name,
-        Some(rename) => rename.to_string(),
-    };
+    let name = Api::patch_variant_name(&key);
     format_ident!("{}", name)
 }
 
@@ -93,17 +69,7 @@ fn extract_method_name(name: &str) -> String {
 }
 
 fn format_struct_ident(key: &str) -> Ident {
-    let key = key.replace("FMOD_RESULT", "FMOD_FMODRESULT");
-    let key = key.replace("FMOD_", "");
-    let key = key.replace("STUDIO_SYSTEM", "STUDIOSYSTEM");
-    let key = key.replace("STUDIO_ADVANCEDSETTINGS", "STUDIOADVANCEDSETTINGS");
-    let key = key.replace("STUDIO_CPU_USAGE", "STUDIOCPUUSAGE");
-    let key = key.replace("STUDIO_", "");
-    let name = key.to_case(Case::Pascal);
-    let name = match RENAMES.get(&name[..]) {
-        None => name,
-        Some(rename) => rename.to_string(),
-    };
+    let name = Api::patch_structure_name(key);
     format_ident!("{}", name)
 }
 
@@ -300,52 +266,8 @@ pub fn generate_field_from(structure: &str, field: &Field, api: &Api) -> TokenSt
     let value_name = ffi::format_rust_ident(&field.name);
     let ptr = describe_pointer(&field.as_const, &field.pointer);
 
-    let getter = match (structure, &field.name[..]) {
-        ("FMOD_DSP_PARAMETER_3DATTRIBUTES_MULTI", "relative") => {
-            quote! { attr3d_array8(value.relative.map(Attributes3d::try_from).into_iter().collect::<Result<Vec<Attributes3d>, Error>>()?) }
-        }
-        ("FMOD_CREATESOUNDEXINFO", "inclusionlist") => {
-            quote! { to_vec!(value.inclusionlist, value.inclusionlistnum) }
-        }
-        ("FMOD_ADVANCEDSETTINGS", "ASIOChannelList") => {
-            quote! { to_vec!(value.ASIOChannelList, value.ASIONumChannels, |ptr| to_string!(ptr))? }
-        }
-        ("FMOD_ADVANCEDSETTINGS", "ASIOSpeakerList") => {
-            quote! { to_vec!(value.ASIOSpeakerList, value.ASIONumChannels, Speaker::from)? }
-        }
-        ("FMOD_OUTPUT_OBJECT3DINFO", "buffer") => {
-            quote! { to_vec!(value.buffer, value.bufferlength) }
-        }
-        ("FMOD_DSP_BUFFER_ARRAY", "buffernumchannels") => {
-            quote! { to_vec!(value.buffernumchannels, value.numbuffers) }
-        }
-        ("FMOD_DSP_BUFFER_ARRAY", "bufferchannelmask") => {
-            quote! { to_vec!(value.bufferchannelmask, value.numbuffers) }
-        }
-        ("FMOD_DSP_BUFFER_ARRAY", "buffers") => {
-            quote! { to_vec!(value.buffers, value.numbuffers, |ptr| Ok(*ptr))? }
-        }
-        ("FMOD_DSP_PARAMETER_FLOAT_MAPPING_PIECEWISE_LINEAR", "pointparamvalues") => {
-            quote! { to_vec!(value.pointparamvalues, value.numpoints) }
-        }
-        ("FMOD_DSP_PARAMETER_FLOAT_MAPPING_PIECEWISE_LINEAR", "pointpositions") => {
-            quote! { to_vec!(value.pointpositions, value.numpoints) }
-        }
-        ("FMOD_DSP_PARAMETER_DESC_INT", "valuenames") => {
-            quote! { vec![] } // TODO
-        }
-        ("FMOD_DSP_PARAMETER_DESC_BOOL", "valuenames") => {
-            quote! { vec![] } // TODO
-        }
-        ("FMOD_DSP_PARAMETER_FFT", "spectrum") => {
-            quote! { to_vec!(value.spectrum.as_ptr(), value.numchannels, |ptr| Ok(to_vec!(ptr, value.length)))? }
-        }
-        ("FMOD_DSP_DESCRIPTION", "paramdesc") => {
-            quote! { to_vec!(*value.paramdesc, value.numparameters, DspParameterDesc::try_from)? }
-        }
-        ("FMOD_DSP_STATE", "sidechaindata") => {
-            quote! { to_vec!(value.sidechaindata, value.sidechainchannels) }
-        }
+    let getter = match api.patch_field_from_expression(structure, &field.name[..]) {
+        Some(expression) => expression,
         _ => match &field.field_type {
             FundamentalType(name) => match (ptr, &name[..]) {
                 ("*const", "char") => quote! { to_string!(value.#value_name)? },
@@ -382,67 +304,8 @@ pub fn generate_into_field(structure: &str, field: &Field, api: &Api) -> TokenSt
     let self_name = format_argument_ident(&field.name);
     let ptr = describe_pointer(&field.as_const, &field.pointer);
 
-    let getter = match (structure, &field.name[..]) {
-        ("FMOD_ADVANCEDSETTINGS", "cbSize") => {
-            quote! { size_of::<ffi::FMOD_ADVANCEDSETTINGS>() as i32 }
-        }
-        ("FMOD_STUDIO_ADVANCEDSETTINGS", "cbsize") => {
-            quote! { size_of::<ffi::FMOD_STUDIO_ADVANCEDSETTINGS>() as i32 }
-        }
-        ("FMOD_CREATESOUNDEXINFO", "cbsize") => {
-            quote! { size_of::<ffi::FMOD_CREATESOUNDEXINFO>() as i32 }
-        }
-        ("FMOD_DSP_DESCRIPTION", "numparameters") => {
-            quote! { self.paramdesc.len() as i32 }
-        }
-        ("FMOD_DSP_PARAMETER_3DATTRIBUTES_MULTI", "relative") => {
-            quote! { self.relative.map(Attributes3d::into) }
-        }
-        ("FMOD_CREATESOUNDEXINFO", "inclusionlist") => {
-            quote! { self.inclusionlist.as_ptr() as *mut _ }
-        }
-        ("FMOD_OUTPUT_OBJECT3DINFO", "buffer") => {
-            quote! { self.buffer.as_ptr() as *mut _ }
-        }
-        ("FMOD_ADVANCEDSETTINGS", "ASIOChannelList") => {
-            quote! { self.asio_channel_list.into_iter().map(|val| val.as_ptr()).collect::<Vec<_>>().as_mut_ptr().cast() }
-        }
-        ("FMOD_ADVANCEDSETTINGS", "ASIOSpeakerList") => {
-            quote! { self.asio_speaker_list.into_iter().map(|val| val.into()).collect::<Vec<_>>().as_mut_ptr() }
-        }
-        ("FMOD_DSP_BUFFER_ARRAY", "buffernumchannels") => {
-            quote! { self.buffernumchannels.as_ptr() as *mut _ }
-        }
-        ("FMOD_DSP_BUFFER_ARRAY", "bufferchannelmask") => {
-            quote! { self.bufferchannelmask.as_ptr() as *mut _ }
-        }
-        ("FMOD_DSP_BUFFER_ARRAY", "buffers") => {
-            quote! { self.buffers.as_ptr() as *mut _ }
-        }
-        ("FMOD_DSP_PARAMETER_FLOAT_MAPPING_PIECEWISE_LINEAR", "pointparamvalues") => {
-            quote! { self.pointparamvalues.as_ptr() as *mut _ }
-        }
-        ("FMOD_DSP_PARAMETER_FLOAT_MAPPING_PIECEWISE_LINEAR", "pointpositions") => {
-            quote! { self.pointpositions.as_ptr() as *mut _ }
-        }
-        ("FMOD_DSP_PARAMETER_DESC_INT", "valuenames") => {
-            quote! { self.valuenames.as_ptr() as *mut _ }
-        }
-        ("FMOD_DSP_PARAMETER_DESC_BOOL", "valuenames") => {
-            quote! { self.valuenames.as_ptr() as *mut _ }
-        }
-        ("FMOD_DSP_DESCRIPTION", "paramdesc") => {
-            quote! { &mut vec_as_mut_ptr(self.paramdesc, |param| param.into()) }
-        }
-        ("FMOD_DSP_STATE", "sidechaindata") => {
-            quote! { self.sidechaindata.as_ptr() as *mut _ }
-        }
-        ("FMOD_DSP_PARAMETER_FFT", "numchannels") => {
-            quote! { self.spectrum.len() as i32 }
-        }
-        ("FMOD_DSP_PARAMETER_FFT", "spectrum") => {
-            quote! { [null_mut(); 32] }
-        }
+    let getter = match api.patch_field_into_expression(structure, &field.name[..]) {
+        Some(expression) => expression,
         _ => match &field.field_type {
             FundamentalType(name) => match (ptr, &name[..]) {
                 ("*const", "char") => quote! { self.#self_name.as_ptr().cast() },
