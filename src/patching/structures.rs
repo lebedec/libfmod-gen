@@ -22,6 +22,32 @@ impl Api {
                 }
             }
         });
+        self.structure_patches.insert(
+            "FMOD_CREATESOUNDEXINFO".to_string(),
+            quote! {
+               impl Default for CreateSoundexInfo {
+                    fn default() -> Self {
+                        Self::try_from(ffi::FMOD_CREATESOUNDEXINFO::default()).unwrap()
+                    }
+                }
+            },
+        );
+        self.structure_patches.insert(
+            "FMOD_GUID".to_string(),
+            quote! {
+               impl Guid {
+                    pub fn from_ptr(value: *mut ffi::FMOD_GUID) -> Self {
+                        let value = unsafe { *value };
+                        Self {
+                            data_1: value.Data1,
+                            data_2: value.Data2,
+                            data_3: value.Data3,
+                            data_4: value.Data4,
+                        }
+                    }
+                }
+            },
+        );
     }
 
     pub fn patch_structure_name(key: &str) -> String {

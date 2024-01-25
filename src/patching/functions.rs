@@ -223,6 +223,100 @@ impl Signature {
 impl Api {
     pub fn patch_functions(&mut self) {
         self.function_patches.insert(
+            "FMOD_System_CreateStream".to_string(),
+            quote! {
+                pub fn create_stream(
+                    &self,
+                    name_or_data: &str,
+                    mode: impl Into<ffi::FMOD_MODE>,
+                    exinfo: Option<CreateSoundexInfo>,
+                ) -> Result<Sound, Error> {
+                    unsafe {
+                        let mut sound = null_mut();
+                        match ffi::FMOD_System_CreateStream(
+                            self.pointer,
+                            CString::new(name_or_data)?.as_ptr(),
+                            mode.into(),
+                            exinfo
+                                .map(|value| &mut value.into() as *mut _)
+                                .unwrap_or(null_mut()),
+                            &mut sound,
+                        ) {
+                            ffi::FMOD_OK => Ok(Sound::from(sound)),
+                            error => Err(err_fmod!("FMOD_System_CreateStream", error)),
+                        }
+                    }
+                }
+                pub fn create_stream_from(
+                    &self,
+                    data: &[u8],
+                    mode: impl Into<ffi::FMOD_MODE>,
+                    exinfo: CreateSoundexInfo,
+                ) -> Result<Sound, Error> {
+                    unsafe {
+                        let mut sound = null_mut();
+                        match ffi::FMOD_System_CreateStream(
+                            self.pointer,
+                            data.as_ptr() as *const _,
+                            mode.into(),
+                            &mut exinfo.into() as *mut _,
+                            &mut sound,
+                        ) {
+                            ffi::FMOD_OK => Ok(Sound::from(sound)),
+                            error => Err(err_fmod!("FMOD_System_CreateStream", error)),
+                        }
+                    }
+                }
+            },
+        );
+        self.function_patches.insert(
+            "FMOD_System_CreateSound".to_string(),
+            quote! {
+                pub fn create_sound(
+                    &self,
+                    name_or_data: &str,
+                    mode: impl Into<ffi::FMOD_MODE>,
+                    exinfo: Option<CreateSoundexInfo>,
+                ) -> Result<Sound, Error> {
+                    unsafe {
+                        let mut sound = null_mut();
+                        match ffi::FMOD_System_CreateSound(
+                            self.pointer,
+                            CString::new(name_or_data)?.as_ptr(),
+                            mode.into(),
+                            exinfo
+                                .map(|value| &mut value.into() as *mut _)
+                                .unwrap_or(null_mut()),
+                            &mut sound,
+                        ) {
+                            ffi::FMOD_OK => Ok(Sound::from(sound)),
+                            error => Err(err_fmod!("FMOD_System_CreateSound", error)),
+                        }
+                    }
+                }
+                pub fn create_sound_from(
+                    &self,
+                    data: &[u8],
+                    mode: impl Into<ffi::FMOD_MODE>,
+                    exinfo: CreateSoundexInfo,
+                ) -> Result<Sound, Error> {
+                    unsafe {
+                        let mut sound = null_mut();
+                        match ffi::FMOD_System_CreateSound(
+                            self.pointer,
+                            data.as_ptr() as *const _,
+                            mode.into(),
+                            &mut exinfo.into() as *mut _,
+                            &mut sound,
+                        ) {
+                            ffi::FMOD_OK => Ok(Sound::from(sound)),
+                            error => Err(err_fmod!("FMOD_System_CreateSound", error)),
+                        }
+                    }
+                }
+            },
+        );
+        self.function_patches.insert(
             "FMOD_Studio_System_LoadBankMemory".to_string(),
             quote! {
                 pub fn load_bank_memory(

@@ -9,6 +9,19 @@ impl Api {
     ) -> Option<TokenStream> {
         let expression = match (structure, field) {
             ("FMOD_DSP_PARAMETER_FFT", "spectrum") => quote! { pub spectrum: Vec<Vec<f32>> },
+            ("FMOD_CREATESOUNDEXINFO", "dlsname") => quote! { pub dlsname: Option<String> },
+            ("FMOD_CREATESOUNDEXINFO", "fsbguid") => quote! { pub fsbguid: Option<Guid> },
+            ("FMOD_CREATESOUNDEXINFO", "encryptionkey") => {
+                quote! { pub encryptionkey: Option<String> }
+            }
+            ("FMOD_CREATESOUNDEXINFO", "initialsoundgroup") => {
+                quote! { pub initialsoundgroup: Option<SoundGroup> }
+            }
+            ("FMOD_CREATESOUNDEXINFO", "inclusionlist") => {
+                quote! { pub inclusionlist: Option<Vec<i32>> }
+            }
+            //
+            ("FMOD_CREATESOUNDEXINFO", "inclusionlistnum") => quote! {},
             ("FMOD_ADVANCEDSETTINGS", "cbSize") => quote! {},
             ("FMOD_STUDIO_ADVANCEDSETTINGS", "cbsize") => quote! {},
             ("FMOD_CREATESOUNDEXINFO", "cbsize") => quote! {},
@@ -32,7 +45,7 @@ impl Api {
     }
          */
 
-    pub fn patch_field_from_expression(&self, structure: &str, field: &str) -> Option<TokenStream> {
+    pub fn patch_field_try_from(&self, structure: &str, field: &str) -> Option<TokenStream> {
         let expression = match (structure, field) {
             ("FMOD_ADVANCEDSETTINGS", "cbSize") => quote! {},
             ("FMOD_STUDIO_ADVANCEDSETTINGS", "cbsize") => quote! {},
@@ -40,11 +53,24 @@ impl Api {
             ("FMOD_DSP_DESCRIPTION", "numparameters") => quote! {},
             ("FMOD_DSP_PARAMETER_FFT", "numchannels") => quote! {},
             //
+            ("FMOD_CREATESOUNDEXINFO", "inclusionlist") => quote! {
+                ptr_opt!(value.inclusionlist, to_vec!(value.inclusionlist, value.inclusionlistnum))
+            },
+            ("FMOD_CREATESOUNDEXINFO", "inclusionlistnum") => quote! {},
+            ("FMOD_CREATESOUNDEXINFO", "dlsname") => quote! {
+                ptr_opt!(value.dlsname, to_string!(value.dlsname)?)
+            },
+            ("FMOD_CREATESOUNDEXINFO", "encryptionkey") => quote! {
+                ptr_opt!(value.encryptionkey, to_string!(value.encryptionkey)?)
+            },
+            ("FMOD_CREATESOUNDEXINFO", "initialsoundgroup") => quote! {
+                ptr_opt!(value.initialsoundgroup, SoundGroup::from(value.initialsoundgroup))
+            },
+            ("FMOD_CREATESOUNDEXINFO", "fsbguid") => quote! {
+                ptr_opt!(value.fsbguid, Guid::from_ptr(value.fsbguid))
+            },
             ("FMOD_DSP_PARAMETER_3DATTRIBUTES_MULTI", "relative") => {
                 quote! { attr3d_array8(value.relative.map(Attributes3d::try_from).into_iter().collect::<Result<Vec<Attributes3d>, Error>>()?) }
-            }
-            ("FMOD_CREATESOUNDEXINFO", "inclusionlist") => {
-                quote! { to_vec!(value.inclusionlist, value.inclusionlistnum) }
             }
             ("FMOD_ADVANCEDSETTINGS", "ASIOChannelList") => {
                 quote! { to_vec!(value.ASIOChannelList, value.ASIONumChannels, |ptr| to_string!(ptr))? }
@@ -90,25 +116,40 @@ impl Api {
         Some(expression)
     }
 
-    pub fn patch_field_into_expression(&self, structure: &str, field: &str) -> Option<TokenStream> {
+    pub fn patch_field_into(&self, structure: &str, field: &str) -> Option<TokenStream> {
         let expression = match (structure, field) {
+            ("FMOD_CREATESOUNDEXINFO", "inclusionlist") => {
+                quote! { opt_ptr!(self.inclusionlist.clone(), |v| v.as_slice().as_ptr()as *mut _) }
+            }
+            ("FMOD_CREATESOUNDEXINFO", "inclusionlistnum") => {
+                quote! { self.inclusionlist.map(|v| v.len()).unwrap_or(0) as _ }
+            }
+            ("FMOD_CREATESOUNDEXINFO", "dlsname") => {
+                quote! { opt_ptr!(self.dlsname.map(|v| CString::new(v).unwrap()), |v| v.as_ptr()) }
+            }
+            ("FMOD_CREATESOUNDEXINFO", "encryptionkey") => {
+                quote! { opt_ptr!(self.encryptionkey.map(|v| CString::new(v).unwrap()), |v| v.as_ptr()) }
+            }
+            ("FMOD_CREATESOUNDEXINFO", "initialsoundgroup") => {
+                quote! { opt_ptr!(self.initialsoundgroup, |v| v.as_mut_ptr()) }
+            }
+            ("FMOD_CREATESOUNDEXINFO", "fsbguid") => {
+                quote! { opt_ptr!(self.fsbguid, |v| &mut v.into() as *mut _) }
+            }
+            ("FMOD_CREATESOUNDEXINFO", "cbsize") => {
+                quote! { size_of::<ffi::FMOD_CREATESOUNDEXINFO>() as i32 }
+            }
             ("FMOD_ADVANCEDSETTINGS", "cbSize") => {
                 quote! { size_of::<ffi::FMOD_ADVANCEDSETTINGS>() as i32 }
             }
             ("FMOD_STUDIO_ADVANCEDSETTINGS", "cbsize") => {
                 quote! { size_of::<ffi::FMOD_STUDIO_ADVANCEDSETTINGS>() as i32 }
             }
-            ("FMOD_CREATESOUNDEXINFO", "cbsize") => {
-                quote! { size_of::<ffi::FMOD_CREATESOUNDEXINFO>() as i32 }
-            }
             ("FMOD_DSP_DESCRIPTION", "numparameters") => {
                 quote! { self.paramdesc.len() as i32 }
             }
             ("FMOD_DSP_PARAMETER_3DATTRIBUTES_MULTI", "relative") => {
                 quote! { self.relative.map(Attributes3d::into) }
-            }
-            ("FMOD_CREATESOUNDEXINFO", "inclusionlist") => {
-                quote! { self.inclusionlist.as_ptr() as *mut _ }
             }
             ("FMOD_OUTPUT_OBJECT3DINFO", "buffer") => {
                 quote! { self.buffer.as_ptr() as *mut _ }

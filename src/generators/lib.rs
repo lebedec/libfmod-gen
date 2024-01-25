@@ -240,7 +240,7 @@ pub fn generate_field_from(structure: &str, field: &Field, api: &Api) -> TokenSt
     let value_name = ffi::format_rust_ident(&field.name);
     let ptr = describe_pointer(&field.as_const, &field.pointer);
 
-    let getter = match api.patch_field_from_expression(structure, &field.name[..]) {
+    let getter = match api.patch_field_try_from(structure, &field.name[..]) {
         Some(expression) => {
             if expression.is_empty() {
                 return expression;
@@ -284,7 +284,7 @@ pub fn generate_into_field(structure: &str, field: &Field, api: &Api) -> TokenSt
     let self_name = format_argument_ident(&field.name);
     let ptr = describe_pointer(&field.as_const, &field.pointer);
 
-    let getter = match api.patch_field_into_expression(structure, &field.name[..]) {
+    let getter = match api.patch_field_into(structure, &field.name[..]) {
         Some(expression) => expression,
         _ => match &field.field_type {
             FundamentalType(name) => match (ptr, &name[..]) {
@@ -1073,6 +1073,22 @@ pub fn generate_lib_code(api: &Api) -> Result<TokenStream, Error> {
                         .into_string()
                         .map_err(Error::String)
                 }
+            };
+        }
+
+        macro_rules! ptr_opt {
+            ($ ptr : expr , $ value : expr) => {
+                if $ptr.is_null() {
+                    None
+                } else {
+                    Some($value)
+                }
+            };
+        }
+
+        macro_rules! opt_ptr {
+            ($ opt : expr , $ map : expr) => {
+                $opt.map($map).unwrap_or(null_mut())
             };
         }
 
