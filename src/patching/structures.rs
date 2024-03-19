@@ -48,6 +48,53 @@ impl Api {
                 }
             },
         );
+        self.structure_patches.insert(
+            "FMOD_VECTOR".to_string(),
+            quote! {
+                impl Vector {
+                    pub const fn new(x: f32, y: f32, z: f32) -> Self {
+                        Vector { x, y, z }
+                    }
+                }
+                impl From<[f32;3]> for Vector {
+                    fn from(value: [f32;3]) -> Vector {
+                        Vector {
+                            x: value[0],
+                            y: value[1],
+                            z: value[2]
+                        }
+                    }
+                }
+                impl From<Vector> for [f32; 3] {
+                    fn from(value: Vector) -> [f32; 3] {
+                        [value.x, value.y, value.z]
+                    }
+                }
+                impl From<(f32, f32, f32)> for Vector {
+                    fn from(value: (f32, f32, f32)) -> Vector {
+                        Vector {
+                            x: value.0,
+                            y: value.1,
+                            z: value.2
+                        }
+                    }
+                }
+                impl From<Vector> for (f32, f32, f32) {
+                    fn from(value: Vector) -> (f32, f32, f32) {
+                        (value.x, value.y, value.z)
+                    }
+                }
+            },
+        );
+    }
+
+    pub fn patch_structure_derives(&mut self) {
+        self.structure_derives
+            .insert("FMOD_DSP_DESCRIPTION".to_string(), quote! { Clone });
+        self.structure_derives.insert(
+            "FMOD_VECTOR".to_string(),
+            quote! { Debug, Clone, Copy, PartialEq },
+        );
     }
 
     pub fn patch_structure_name(key: &str) -> String {

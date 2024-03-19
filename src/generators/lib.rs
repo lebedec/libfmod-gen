@@ -403,16 +403,16 @@ pub fn generate_structure(structure: &Structure, api: &Api) -> TokenStream {
         .filter(|definition| !definition.is_empty())
         .collect();
 
-    let mut derive = quote! { Debug, Clone };
+    let mut derive = match api.structure_derives.get(&structure.name) {
+        None => quote! { Debug, Clone },
+        Some(drive) => drive.clone(),
+    };
     if structure.union.is_some() {
         let name = format_ident!("{}_UNION", structure.name);
         fields.push(quote! {
             pub union: ffi::#name
         });
         derive = quote! { Clone };
-    }
-    if structure.name == "FMOD_DSP_DESCRIPTION" {
-        derive = quote! { Clone }
     }
     let presets = generate_presets(structure, api);
     let into = generate_structure_into(structure, api);
@@ -504,7 +504,7 @@ fn map_optional(argument: &Argument, api: &Api) -> InArgument {
                 },
                 ("*const", UserTypeDesc::Structure) => InArgument {
                     param: quote! { #name: Option<#tp> },
-                    input: quote! { #name.map(|value| &value.into() as *const _).unwrap_or(null()) },
+                    input: quote! { #name.map(#tp::into).as_ref().map(from_ref).unwrap_or_else(null) },
                 },
                 ("", UserTypeDesc::Enumeration) => InArgument {
                     param: quote! { #name: Option<#tp> },
@@ -1132,6 +1132,10 @@ pub fn generate_lib_code(api: &Api) -> Result<TokenStream, Error> {
             let pointer = values.as_mut_ptr();
             std::mem::forget(values);
             pointer
+        }
+
+        const fn from_ref<T: ?Sized>(value: &T) -> *const T {
+            value
         }
 
         #(#enumerations)*

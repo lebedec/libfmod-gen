@@ -164,5 +164,6 @@ pub struct Api {
     pub errors: ErrorStringMapping,
     pub modifiers: HashMap<String, Modifier>,
     pub structure_patches: HashMap<String, TokenStream>,
+    pub structure_derives: HashMap<String, TokenStream>,
     pub function_patches: HashMap<String, TokenStream>,
 }

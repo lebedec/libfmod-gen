@@ -11,5 +11,6 @@ impl Api {
         self.apply_postprocessing();
         self.patch_functions();
         self.patch_structures();
+        self.patch_structure_derives();
     }
 }
